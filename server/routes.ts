@@ -11,6 +11,8 @@ import {
   insertUserSchema,
   insertWorkLocationSchema,
 } from "@shared/schema";
+import OpenAI from "openai";
+import * as fs from "fs";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -1355,6 +1357,154 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Delete work location error:", error);
       return res.status(500).json({ message: "Failed to delete work location" });
+    }
+  });
+
+  // ============ AI CHAT ROUTES ============
+  app.post("/api/chat", async (req: Request, res: Response) => {
+    try {
+      const { message, conversationHistory = [], userId } = req.body;
+
+      if (!message || typeof message !== "string") {
+        return res.status(400).json({ message: "Message is required" });
+      }
+
+      // Require userId and verify they're an admin
+      if (!userId) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      const user = await storage.getUser(userId);
+      if (!user || user.role !== "admin") {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+
+      const apiKey = process.env.OPENAI_API_KEY;
+      if (!apiKey) {
+        return res.status(500).json({ message: "OpenAI API key not configured" });
+      }
+
+      const openai = new OpenAI({ apiKey });
+
+      // Read help documentation
+      let helpContent = "";
+      try {
+        helpContent = fs.readFileSync("HELP.md", "utf-8");
+      } catch (err) {
+        console.log("HELP.md not found, continuing without documentation");
+      }
+
+      // Gather current app data for context
+      const [users, locations, routes, timeEntries, workLocations] = await Promise.all([
+        storage.getAllUsers(),
+        storage.getAllLocations(),
+        storage.getAllRoutes(),
+        storage.getAllTimeEntries(),
+        storage.getAllWorkLocations(),
+      ]);
+
+      const drivers = users.filter(u => u.role === "driver");
+      const admins = users.filter(u => u.role === "admin");
+      const publishedRoutes = routes.filter(r => r.status === "published");
+      const assignedRoutes = routes.filter(r => r.status === "assigned");
+      const draftRoutes = routes.filter(r => r.status === "draft");
+
+      // Get today's day of week
+      const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+      const todayDayOfWeek = days[new Date().getDay()];
+
+      // Calculate some stats
+      const todaysRoutes = routes.filter(r => r.dayOfWeek === todayDayOfWeek);
+      const scheduledLocations = locations.filter(l => l.daysOfWeek && l.daysOfWeek.length > 0);
+      const unscheduledLocations = locations.filter(l => !l.daysOfWeek || l.daysOfWeek.length === 0);
+
+      // Build data summary for the AI
+      const dataSummary = `
+## Current App Data Summary
+
+### Users
+- Total drivers: ${drivers.length}
+- Total admins: ${admins.length}
+- Driver names: ${drivers.map(d => d.name).join(", ") || "None"}
+
+### Delivery Stops
+- Total locations: ${locations.length}
+- Scheduled locations: ${scheduledLocations.length}
+- Unscheduled locations: ${unscheduledLocations.length}
+${["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"].map(day => {
+  const count = locations.filter(l => l.daysOfWeek?.includes(day)).length;
+  return `- ${day.charAt(0).toUpperCase() + day.slice(1)}: ${count} stops`;
+}).join("\n")}
+
+### Routes
+- Total routes: ${routes.length}
+- Published routes: ${publishedRoutes.length}
+- Assigned routes: ${assignedRoutes.length}
+- Draft routes: ${draftRoutes.length}
+- Today's routes (${todayDayOfWeek}): ${todaysRoutes.length}
+
+### Today's Schedule
+${todaysRoutes.length > 0 ? todaysRoutes.map(r => {
+  const driver = users.find(u => u.id === r.driverId);
+  const stopCount = r.stopCount || (r.stopsJson as RouteStop[])?.length || 0;
+  return `- Route ${r.id.slice(0, 8)}: ${driver?.name || "Unassigned"} - ${stopCount} stops (${r.status})`;
+}).join("\n") : "No routes scheduled for today"}
+
+### Work Locations
+${workLocations.map(wl => `- ${wl.name}: ${wl.address} (radius: ${wl.radiusMeters}m)`).join("\n") || "None configured"}
+
+### Time Tracking
+- Total time entries: ${timeEntries.length}
+- Today's entries: ${timeEntries.filter(te => te.date === format(new Date(), "yyyy-MM-dd")).length}
+`;
+
+      const systemPrompt = `You are a helpful AI assistant for the Grizzly Mats Driver Management App. You help administrators understand how to use the app and answer questions about their data.
+
+## Your Capabilities:
+1. Answer "how to" questions using the app documentation
+2. Provide data insights and summaries from the current app state
+3. Help troubleshoot common issues
+4. Give recommendations for route management and scheduling
+
+## Guidelines:
+- Be concise but helpful
+- Reference specific features and steps when explaining how to do things
+- Use the actual data when answering questions about routes, drivers, or schedules
+- If you don't know something, admit it and suggest where they might find the answer
+- Format responses with markdown for readability
+
+## App Documentation:
+${helpContent}
+
+## Current App Data:
+${dataSummary}
+`;
+
+      // Build messages array with conversation history
+      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+        { role: "system", content: systemPrompt },
+        ...conversationHistory.map((msg: { role: string; content: string }) => ({
+          role: msg.role as "user" | "assistant",
+          content: msg.content,
+        })),
+        { role: "user", content: message },
+      ];
+
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages,
+        temperature: 0.7,
+        max_tokens: 1000,
+      });
+
+      const response = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+
+      return res.json({ response });
+    } catch (error: any) {
+      console.error("Chat error:", error);
+      return res.status(500).json({ 
+        message: error?.message || "Failed to process chat request" 
+      });
     }
   });
 

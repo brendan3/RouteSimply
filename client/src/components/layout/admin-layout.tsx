@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { AdminSidebar } from "./admin-sidebar";
+import { AIChat } from "@/components/chat/ai-chat";
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -28,6 +29,7 @@ export function AdminLayout({ children, title, subtitle, actions }: AdminLayoutP
           {children}
         </div>
       </main>
+      <AIChat />
     </div>
   );
 }
