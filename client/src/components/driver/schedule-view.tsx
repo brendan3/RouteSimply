@@ -5,11 +5,23 @@ import { EmptyState } from "@/components/common/empty-state";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { MapPin, Navigation, Clock, ExternalLink } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { MapPin, Navigation, Clock, ExternalLink, Calendar } from "lucide-react";
 import type { Route, RouteStop } from "@shared/schema";
+
+function getCurrentDayOfWeek(): string {
+  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  return days[new Date().getDay()];
+}
+
+function formatDayOfWeek(day: string | null | undefined): string {
+  if (!day) return "";
+  return day.charAt(0).toUpperCase() + day.slice(1);
+}
 
 export function DriverScheduleView() {
   const { user } = useAuthContext();
+  const todayDayOfWeek = getCurrentDayOfWeek();
 
   const { data: routes = [], isLoading } = useQuery<Route[]>({
     queryKey: ["/api/routes", "driver", user?.id],
@@ -21,7 +33,11 @@ export function DriverScheduleView() {
     enabled: !!user?.id,
   });
 
-  const todayRoute = routes.find((r) => r.status === "published" || r.status === "assigned");
+  // Find today's route - prioritize routes matching today's day of week, then fallback to any published/assigned
+  const todayRoute = routes.find((r) => 
+    (r.status === "published" || r.status === "assigned") && r.dayOfWeek === todayDayOfWeek
+  ) || routes.find((r) => r.status === "published" || r.status === "assigned");
+  
   const stops = (todayRoute?.stopsJson || []) as RouteStop[];
 
   if (isLoading) {
@@ -60,11 +76,17 @@ export function DriverScheduleView() {
 
       <Card className="p-4">
         <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <MapPin className="w-4 h-4 text-primary" />
             <span className="text-sm font-medium text-foreground">
               {stops.length} stops
             </span>
+            {todayRoute.dayOfWeek && (
+              <Badge variant="outline" className="text-xs capitalize">
+                <Calendar className="w-3 h-3 mr-1" />
+                {formatDayOfWeek(todayRoute.dayOfWeek)}
+              </Badge>
+            )}
           </div>
           {todayRoute.estimatedTime && (
             <div className="flex items-center gap-2">

@@ -83,8 +83,8 @@ A mobile-optimized web application for managing mat delivery driver schedules, G
 - `POST /api/locations/upload` - Upload CSV file
 
 ### Routes
-- `GET /api/routes` - Get all routes (optional: ?driverId=)
-- `POST /api/routes/generate` - Generate routes from locations
+- `GET /api/routes` - Get all routes (optional: ?driverId=, ?dayOfWeek=)
+- `POST /api/routes/generate` - Generate routes from locations (body: { driverCount, dayOfWeek })
 - `PATCH /api/routes/:id/assign` - Assign driver to route
 - `PATCH /api/routes/:id/stops` - Update stop order within a route
 - `POST /api/routes/move-stop` - Move stop from one route to another

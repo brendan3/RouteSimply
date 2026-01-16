@@ -16,6 +16,21 @@ import { apiRequest } from "@/lib/queryClient";
 import { Map, Grid, Plus, Upload, RefreshCw, Download } from "lucide-react";
 import type { Route, Location, User } from "@shared/schema";
 
+const DAYS_OF_WEEK = [
+  { value: "monday", label: "Mon" },
+  { value: "tuesday", label: "Tue" },
+  { value: "wednesday", label: "Wed" },
+  { value: "thursday", label: "Thu" },
+  { value: "friday", label: "Fri" },
+  { value: "saturday", label: "Sat" },
+  { value: "sunday", label: "Sun" },
+];
+
+function getCurrentDayOfWeek(): string {
+  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  return days[new Date().getDay()];
+}
+
 export default function AdminRoutesPage() {
   const [showUpload, setShowUpload] = useState(false);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
@@ -24,6 +39,7 @@ export default function AdminRoutesPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "map">("list");
+  const [selectedDay, setSelectedDay] = useState<string>("all");
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -67,8 +83,8 @@ export default function AdminRoutesPage() {
   });
 
   const generateRoutesMutation = useMutation({
-    mutationFn: async (driverCount: number) => {
-      return apiRequest<Route[]>("POST", "/api/routes/generate", { driverCount });
+    mutationFn: async ({ driverCount, dayOfWeek }: { driverCount: number; dayOfWeek?: string }) => {
+      return apiRequest<Route[]>("POST", "/api/routes/generate", { driverCount, dayOfWeek });
     },
     onSuccess: () => {
       setShowGenerateDialog(false);
@@ -135,9 +151,20 @@ export default function AdminRoutesPage() {
     setShowAssignDialog(true);
   };
 
-  const draftRoutes = routes.filter((r) => r.status === "draft");
-  const assignedRoutes = routes.filter((r) => r.status === "assigned");
-  const publishedRoutes = routes.filter((r) => r.status === "published");
+  // Filter routes by selected day
+  const filteredRoutes = selectedDay === "all" 
+    ? routes 
+    : routes.filter((r) => r.dayOfWeek === selectedDay);
+
+  const draftRoutes = filteredRoutes.filter((r) => r.status === "draft");
+  const assignedRoutes = filteredRoutes.filter((r) => r.status === "assigned");
+  const publishedRoutes = filteredRoutes.filter((r) => r.status === "published");
+
+  // Count routes by day for the tabs
+  const routeCountByDay = DAYS_OF_WEEK.reduce((acc, day) => {
+    acc[day.value] = routes.filter((r) => r.dayOfWeek === day.value).length;
+    return acc;
+  }, {} as Record<string, number>);
 
   const isLoading = routesLoading || locationsLoading;
 
@@ -213,41 +240,65 @@ export default function AdminRoutesPage() {
           }
         />
       ) : viewMode === "map" ? (
-        <RouteMapView routes={routes} />
+        <RouteMapView routes={filteredRoutes} />
       ) : (
-        <Tabs defaultValue="all" className="space-y-6">
-          <div className="flex items-center justify-between gap-4">
-            <TabsList>
-              <TabsTrigger value="all" data-testid="tab-all-routes">
-                All ({routes.length})
-              </TabsTrigger>
-              <TabsTrigger value="draft" data-testid="tab-draft-routes">
-                Draft ({draftRoutes.length})
-              </TabsTrigger>
-              <TabsTrigger value="assigned" data-testid="tab-assigned-routes">
-                Assigned ({assignedRoutes.length})
-              </TabsTrigger>
-              <TabsTrigger value="published" data-testid="tab-published-routes">
-                Published ({publishedRoutes.length})
-              </TabsTrigger>
-            </TabsList>
-
-            <div className="flex items-center gap-2">
-              {assignedRoutes.length > 0 && (
-                <Button
-                  onClick={() => publishRoutesMutation.mutate()}
-                  disabled={publishRoutesMutation.isPending}
-                  data-testid="button-publish-routes"
-                >
-                  Publish All Routes
-                </Button>
-              )}
-            </div>
+        <div className="space-y-6">
+          {/* Day of Week Filter */}
+          <div className="flex flex-wrap items-center gap-2" data-testid="day-filter-tabs">
+            <Button
+              variant={selectedDay === "all" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setSelectedDay("all")}
+              data-testid="button-day-all"
+            >
+              All Days ({routes.length})
+            </Button>
+            {DAYS_OF_WEEK.map((day) => (
+              <Button
+                key={day.value}
+                variant={selectedDay === day.value ? "default" : "outline"}
+                size="sm"
+                onClick={() => setSelectedDay(day.value)}
+                data-testid={`button-day-${day.value}`}
+              >
+                {day.label} {routeCountByDay[day.value] > 0 && `(${routeCountByDay[day.value]})`}
+              </Button>
+            ))}
           </div>
 
-          <TabsContent value="all">
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {routes.map((route) => (
+          <Tabs defaultValue="all" className="space-y-6">
+            <div className="flex items-center justify-between gap-4 flex-wrap">
+              <TabsList>
+                <TabsTrigger value="all" data-testid="tab-all-routes">
+                  All ({filteredRoutes.length})
+                </TabsTrigger>
+                <TabsTrigger value="draft" data-testid="tab-draft-routes">
+                  Draft ({draftRoutes.length})
+                </TabsTrigger>
+                <TabsTrigger value="assigned" data-testid="tab-assigned-routes">
+                  Assigned ({assignedRoutes.length})
+                </TabsTrigger>
+                <TabsTrigger value="published" data-testid="tab-published-routes">
+                  Published ({publishedRoutes.length})
+                </TabsTrigger>
+              </TabsList>
+
+              <div className="flex items-center gap-2">
+                {assignedRoutes.length > 0 && (
+                  <Button
+                    onClick={() => publishRoutesMutation.mutate()}
+                    disabled={publishRoutesMutation.isPending}
+                    data-testid="button-publish-routes"
+                  >
+                    Publish All Routes
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            <TabsContent value="all">
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {filteredRoutes.map((route) => (
                 <RouteCard
                   key={route.id}
                   route={route}
@@ -277,21 +328,23 @@ export default function AdminRoutesPage() {
             </div>
           </TabsContent>
 
-          <TabsContent value="published">
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {publishedRoutes.map((route) => (
-                <RouteCard key={route.id} route={route} />
-              ))}
-            </div>
-          </TabsContent>
-        </Tabs>
+            <TabsContent value="published">
+              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                {publishedRoutes.map((route) => (
+                  <RouteCard key={route.id} route={route} />
+                ))}
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
       )}
 
       <GenerateRoutesDialog
         open={showGenerateDialog}
         onOpenChange={setShowGenerateDialog}
         locationCount={locations.length}
-        onGenerate={(count) => generateRoutesMutation.mutate(count)}
+        onGenerate={(count, dayOfWeek) => generateRoutesMutation.mutate({ driverCount: count, dayOfWeek })}
+        defaultDay={selectedDay !== "all" ? selectedDay : undefined}
         isLoading={generateRoutesMutation.isPending}
       />
 

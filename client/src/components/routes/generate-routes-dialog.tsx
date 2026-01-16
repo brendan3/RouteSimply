@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -21,9 +21,20 @@ interface GenerateRoutesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   locationCount: number;
-  onGenerate: (driverCount: number) => void;
+  onGenerate: (driverCount: number, dayOfWeek?: string) => void;
   isLoading?: boolean;
+  defaultDay?: string;
 }
+
+const DAYS_OF_WEEK = [
+  { value: "monday", label: "Monday" },
+  { value: "tuesday", label: "Tuesday" },
+  { value: "wednesday", label: "Wednesday" },
+  { value: "thursday", label: "Thursday" },
+  { value: "friday", label: "Friday" },
+  { value: "saturday", label: "Saturday" },
+  { value: "sunday", label: "Sunday" },
+];
 
 export function GenerateRoutesDialog({
   open,
@@ -31,11 +42,20 @@ export function GenerateRoutesDialog({
   locationCount,
   onGenerate,
   isLoading,
+  defaultDay,
 }: GenerateRoutesDialogProps) {
   const [driverCount, setDriverCount] = useState<string>("2");
+  const [dayOfWeek, setDayOfWeek] = useState<string>(defaultDay || "monday");
+
+  // Sync dayOfWeek state when defaultDay changes or dialog opens
+  useEffect(() => {
+    if (open && defaultDay) {
+      setDayOfWeek(defaultDay);
+    }
+  }, [open, defaultDay]);
 
   const handleGenerate = () => {
-    onGenerate(parseInt(driverCount));
+    onGenerate(parseInt(driverCount), dayOfWeek);
   };
 
   const stopsPerDriver = Math.ceil(locationCount / parseInt(driverCount));
@@ -54,6 +74,22 @@ export function GenerateRoutesDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          <div className="space-y-2">
+            <Label htmlFor="day-of-week">Day of Week</Label>
+            <Select value={dayOfWeek} onValueChange={setDayOfWeek}>
+              <SelectTrigger id="day-of-week" data-testid="select-day-of-week">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DAYS_OF_WEEK.map((day) => (
+                  <SelectItem key={day.value} value={day.value}>
+                    {day.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="driver-count">Number of Drivers</Label>
             <Select value={driverCount} onValueChange={setDriverCount}>

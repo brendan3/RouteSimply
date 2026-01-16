@@ -1,4 +1,4 @@
-import { MapPin, Clock, Navigation, GripVertical, User, ChevronRight } from "lucide-react";
+import { MapPin, Clock, Navigation, GripVertical, User, ChevronRight, Calendar } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,7 +45,7 @@ export function RouteCard({
         )}
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex items-center gap-3 mb-3 flex-wrap">
             <Badge
               className={cn("text-xs font-medium", statusColors[route.status as keyof typeof statusColors] || statusColors.draft)}
             >
@@ -53,6 +53,12 @@ export function RouteCard({
               {route.status === "assigned" && "Assigned"}
               {route.status === "published" && "Published"}
             </Badge>
+            {route.dayOfWeek && (
+              <Badge variant="outline" className="text-xs font-medium capitalize">
+                <Calendar className="w-3 h-3 mr-1" />
+                {route.dayOfWeek}
+              </Badge>
+            )}
             {hasDriver && (
               <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                 <User className="w-4 h-4" />
