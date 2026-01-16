@@ -12,9 +12,15 @@ A mobile-optimized web application for managing mat delivery driver schedules, G
 ### Frontend (React + TypeScript)
 - **Framework**: React with Vite
 - **Styling**: Tailwind CSS with Apple-inspired design system
-- **State Management**: TanStack Query for server state
+- **State Management**: TanStack Query for server state, localStorage for UI preferences
 - **Routing**: Wouter
 - **UI Components**: Custom components with Shadcn/UI primitives
+
+### State Persistence
+UI preferences persist across navigation using localStorage:
+- **Routes Page**: View mode (list/map), day filter, status tab
+- **Delivery Stops Page**: View mode (cards/list), day filter
+- **Calendar Page**: View mode (weekly/monthly), current date
 
 ### Backend (Node.js + Express)
 - **API**: RESTful API with Express.js

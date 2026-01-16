@@ -34,8 +34,30 @@ export default function AdminRoutesPage() {
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
-  const [viewMode, setViewMode] = useState<"list" | "map">("list");
-  const [selectedDay, setSelectedDay] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"list" | "map">(() => {
+    const saved = localStorage.getItem("routes_viewMode");
+    return saved === "map" ? "map" : "list";
+  });
+  const [selectedDay, setSelectedDay] = useState<string>(() => {
+    return localStorage.getItem("routes_selectedDay") || "all";
+  });
+  const [selectedTab, setSelectedTab] = useState<string>(() => {
+    return localStorage.getItem("routes_selectedTab") || "all";
+  });
+
+  // Persist state to localStorage
+  const handleViewModeChange = (mode: "list" | "map") => {
+    setViewMode(mode);
+    localStorage.setItem("routes_viewMode", mode);
+  };
+  const handleDayChange = (day: string) => {
+    setSelectedDay(day);
+    localStorage.setItem("routes_selectedDay", day);
+  };
+  const handleTabChange = (tab: string) => {
+    setSelectedTab(tab);
+    localStorage.setItem("routes_selectedTab", tab);
+  };
 
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -177,7 +199,7 @@ export default function AdminRoutesPage() {
           <div className="flex items-center gap-1 border-l pl-2 ml-2">
             <Button
               variant={viewMode === "list" ? "default" : "outline"}
-              onClick={() => setViewMode("list")}
+              onClick={() => handleViewModeChange("list")}
               data-testid="button-list-view"
             >
               <Grid className="w-4 h-4 mr-2" />
@@ -185,7 +207,7 @@ export default function AdminRoutesPage() {
             </Button>
             <Button
               variant={viewMode === "map" ? "default" : "outline"}
-              onClick={() => setViewMode("map")}
+              onClick={() => handleViewModeChange("map")}
               data-testid="button-map-view"
             >
               <Map className="w-4 h-4 mr-2" />
@@ -232,7 +254,7 @@ export default function AdminRoutesPage() {
             <Button
               variant={selectedDay === "all" ? "default" : "outline"}
               size="sm"
-              onClick={() => setSelectedDay("all")}
+              onClick={() => handleDayChange("all")}
               data-testid="button-day-all"
             >
               All Days ({routes.length})
@@ -242,7 +264,7 @@ export default function AdminRoutesPage() {
                 key={day.value}
                 variant={selectedDay === day.value ? "default" : "outline"}
                 size="sm"
-                onClick={() => setSelectedDay(day.value)}
+                onClick={() => handleDayChange(day.value)}
                 data-testid={`button-day-${day.value}`}
               >
                 {day.label} {routeCountByDay[day.value] > 0 && `(${routeCountByDay[day.value]})`}
@@ -250,7 +272,7 @@ export default function AdminRoutesPage() {
             ))}
           </div>
 
-          <Tabs defaultValue="all" className="space-y-6">
+          <Tabs value={selectedTab} onValueChange={handleTabChange} className="space-y-6">
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <TabsList>
                 <TabsTrigger value="all" data-testid="tab-all-routes">

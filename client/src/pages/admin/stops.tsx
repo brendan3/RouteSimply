@@ -46,10 +46,25 @@ export default function AdminStopsPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterDay, setFilterDay] = useState<string>("all");
-  const [viewMode, setViewMode] = useState<"cards" | "list">("cards");
+  const [filterDay, setFilterDay] = useState<string>(() => {
+    return localStorage.getItem("stops_filterDay") || "all";
+  });
+  const [viewMode, setViewMode] = useState<"cards" | "list">(() => {
+    const saved = localStorage.getItem("stops_viewMode");
+    return saved === "list" ? "list" : "cards";
+  });
   const [sortField, setSortField] = useState<SortField>("customerName");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
+
+  // Persist state to localStorage
+  const handleFilterDayChange = (day: string) => {
+    setFilterDay(day);
+    localStorage.setItem("stops_filterDay", day);
+  };
+  const handleViewModeChange = (mode: "cards" | "list") => {
+    setViewMode(mode);
+    localStorage.setItem("stops_viewMode", mode);
+  };
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -208,7 +223,7 @@ export default function AdminStopsPage() {
             <Button
               variant={viewMode === "cards" ? "default" : "ghost"}
               size="sm"
-              onClick={() => setViewMode("cards")}
+              onClick={() => handleViewModeChange("cards")}
               data-testid="button-view-cards"
             >
               <Grid className="w-4 h-4 mr-1" />
@@ -217,7 +232,7 @@ export default function AdminStopsPage() {
             <Button
               variant={viewMode === "list" ? "default" : "ghost"}
               size="sm"
-              onClick={() => setViewMode("list")}
+              onClick={() => handleViewModeChange("list")}
               data-testid="button-view-list"
             >
               <List className="w-4 h-4 mr-1" />
@@ -262,7 +277,7 @@ export default function AdminStopsPage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
             <Card 
               className={`cursor-pointer transition-all hover-elevate ${filterDay === "all" ? "ring-2 ring-primary" : ""}`}
-              onClick={() => setFilterDay("all")}
+              onClick={() => handleFilterDayChange("all")}
               data-testid="filter-all"
             >
               <CardContent className="p-3 text-center">
@@ -274,7 +289,7 @@ export default function AdminStopsPage() {
               <Card 
                 key={day.value}
                 className={`cursor-pointer transition-all hover-elevate ${filterDay === day.value ? "ring-2 ring-primary" : ""}`}
-                onClick={() => setFilterDay(day.value)}
+                onClick={() => handleFilterDayChange(day.value)}
                 data-testid={`filter-${day.value}`}
               >
                 <CardContent className="p-3 text-center">
@@ -289,7 +304,7 @@ export default function AdminStopsPage() {
           {unscheduledCount > 0 && (
             <Card 
               className={`cursor-pointer border-orange-200 bg-orange-50 dark:border-orange-900 dark:bg-orange-950/30 ${filterDay === "unscheduled" ? "ring-2 ring-orange-500" : ""}`}
-              onClick={() => setFilterDay("unscheduled")}
+              onClick={() => handleFilterDayChange("unscheduled")}
               data-testid="filter-unscheduled"
             >
               <CardContent className="p-4 flex items-center justify-between gap-4">

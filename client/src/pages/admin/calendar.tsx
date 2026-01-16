@@ -23,8 +23,24 @@ const ROUTE_COLORS = [
 ];
 
 export default function AdminCalendarPage() {
-  const [viewMode, setViewMode] = useState<"weekly" | "monthly">("weekly");
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [viewMode, setViewMode] = useState<"weekly" | "monthly">(() => {
+    const saved = localStorage.getItem("calendar_viewMode");
+    return saved === "monthly" ? "monthly" : "weekly";
+  });
+  const [currentDate, setCurrentDate] = useState(() => {
+    const saved = localStorage.getItem("calendar_currentDate");
+    return saved ? new Date(saved) : new Date();
+  });
+
+  // Persist state to localStorage
+  const handleViewModeChange = (mode: "weekly" | "monthly") => {
+    setViewMode(mode);
+    localStorage.setItem("calendar_viewMode", mode);
+  };
+  const handleDateChange = (date: Date) => {
+    setCurrentDate(date);
+    localStorage.setItem("calendar_currentDate", date.toISOString());
+  };
 
   const { data: routes = [], isLoading: routesLoading } = useQuery<Route[]>({
     queryKey: ["/api/routes"],
@@ -48,22 +64,22 @@ export default function AdminCalendarPage() {
 
   const navigateBack = () => {
     if (viewMode === "weekly") {
-      setCurrentDate((prev) => subWeeks(prev, 1));
+      handleDateChange(subWeeks(currentDate, 1));
     } else {
-      setCurrentDate((prev) => subMonths(prev, 1));
+      handleDateChange(subMonths(currentDate, 1));
     }
   };
 
   const navigateForward = () => {
     if (viewMode === "weekly") {
-      setCurrentDate((prev) => addWeeks(prev, 1));
+      handleDateChange(addWeeks(currentDate, 1));
     } else {
-      setCurrentDate((prev) => addMonths(prev, 1));
+      handleDateChange(addMonths(currentDate, 1));
     }
   };
 
   const goToToday = () => {
-    setCurrentDate(new Date());
+    handleDateChange(new Date());
   };
 
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
@@ -110,7 +126,7 @@ export default function AdminCalendarPage() {
           <Button
             variant={viewMode === "weekly" ? "default" : "outline"}
             size="sm"
-            onClick={() => setViewMode("weekly")}
+            onClick={() => handleViewModeChange("weekly")}
             data-testid="button-view-weekly"
           >
             <List className="w-4 h-4 mr-1" />
@@ -119,7 +135,7 @@ export default function AdminCalendarPage() {
           <Button
             variant={viewMode === "monthly" ? "default" : "outline"}
             size="sm"
-            onClick={() => setViewMode("monthly")}
+            onClick={() => handleViewModeChange("monthly")}
             data-testid="button-view-monthly"
           >
             <CalendarIcon className="w-4 h-4 mr-1" />
