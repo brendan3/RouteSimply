@@ -43,6 +43,7 @@ export interface IStorage {
   updateRoute(id: string, data: Partial<InsertRoute>): Promise<Route>;
   deleteRoute(id: string): Promise<void>;
   clearRoutes(): Promise<void>;
+  clearRoutesByDay(dayOfWeek: string): Promise<void>;
 
   // Time Entries
   getTimeEntry(id: string): Promise<TimeEntry | undefined>;

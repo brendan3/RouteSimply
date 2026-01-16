@@ -616,6 +616,138 @@ export async function registerRoutes(
     }
   });
 
+  // Helper function to generate routes for a specific day
+  async function generateRoutesForDay(
+    dayLocations: Location[],
+    driverCount: number,
+    dayOfWeek: string
+  ): Promise<Route[]> {
+    const createdRoutes: Route[] = [];
+    
+    // Check if locations have coordinates for geographic optimization
+    const locationsWithCoords = dayLocations.filter(loc => loc.lat != null && loc.lng != null);
+    const hasCoordinates = locationsWithCoords.length === dayLocations.length && dayLocations.length > 0;
+
+    if (hasCoordinates) {
+      // Use geographic clustering (K-means) + nearest-neighbor optimization
+      const clusters = kMeansClustering(dayLocations, driverCount);
+
+      for (const cluster of clusters) {
+        if (cluster.length === 0) continue;
+
+        // Apply nearest-neighbor ordering within each cluster
+        const orderedLocations = nearestNeighborOrdering(cluster);
+
+        // Create route stops with optimized sequence
+        let stops: RouteStop[] = orderedLocations.map((loc, index) => ({
+          id: randomUUID(),
+          locationId: loc.id,
+          address: loc.address,
+          customerName: loc.customerName,
+          serviceType: loc.serviceType || undefined,
+          notes: loc.notes || undefined,
+          lat: loc.lat || undefined,
+          lng: loc.lng || undefined,
+          sequence: index + 1,
+        }));
+
+        // Try Google Routes API optimization for better results
+        let totalDistance: number | null = null;
+        let estimatedTime: number | null = null;
+        const googleResult = await optimizeRouteWithGoogle(stops);
+        
+        if (googleResult) {
+          stops = googleResult.optimizedStops;
+          totalDistance = googleResult.totalDistanceKm;
+          estimatedTime = googleResult.estimatedTimeMinutes;
+          console.log(`Route for ${dayOfWeek} optimized with Google: ${stops.length} stops, ${totalDistance}km, ${estimatedTime} min`);
+        } else {
+          totalDistance = calculateRouteDistance(stops);
+          estimatedTime = totalDistance ? Math.round((totalDistance / 40) * 60) + (stops.length * 5) : stops.length * 15;
+          console.log(`Route for ${dayOfWeek} using nearest-neighbor: ${stops.length} stops, ${totalDistance}km (Haversine), ${estimatedTime} min est`);
+        }
+
+        const mapsUrl = generateGoogleMapsUrl(stops);
+
+        const route = await storage.createRoute({
+          date: format(new Date(), "yyyy-MM-dd"),
+          dayOfWeek: dayOfWeek,
+          stopsJson: stops,
+          routeLink: mapsUrl,
+          totalDistance,
+          estimatedTime,
+          status: "draft",
+          stopCount: stops.length,
+          driverId: null,
+          driverName: null,
+        });
+
+        createdRoutes.push(route);
+      }
+    } else {
+      // Fallback: Simple round-robin division (no coordinates available)
+      const stopsPerDriver = Math.ceil(dayLocations.length / driverCount);
+
+      for (let i = 0; i < driverCount; i++) {
+        const startIndex = i * stopsPerDriver;
+        const endIndex = Math.min(startIndex + stopsPerDriver, dayLocations.length);
+        
+        if (startIndex >= dayLocations.length) break;
+
+        const routeLocations = dayLocations.slice(startIndex, endIndex);
+        
+        let stops: RouteStop[] = routeLocations.map((loc, index) => ({
+          id: randomUUID(),
+          locationId: loc.id,
+          address: loc.address,
+          customerName: loc.customerName,
+          serviceType: loc.serviceType || undefined,
+          notes: loc.notes || undefined,
+          lat: loc.lat || undefined,
+          lng: loc.lng || undefined,
+          sequence: index + 1,
+        }));
+
+        let totalDistance: number | null = null;
+        let estimatedTime: number | null = null;
+        const stopsHaveCoords = stops.every(s => s.lat != null && s.lng != null);
+        
+        if (stopsHaveCoords) {
+          const googleResult = await optimizeRouteWithGoogle(stops);
+          if (googleResult) {
+            stops = googleResult.optimizedStops;
+            totalDistance = googleResult.totalDistanceKm;
+            estimatedTime = googleResult.estimatedTimeMinutes;
+          } else {
+            totalDistance = calculateRouteDistance(stops);
+            estimatedTime = totalDistance ? Math.round((totalDistance / 40) * 60) + (stops.length * 5) : stops.length * 15;
+          }
+        } else {
+          estimatedTime = stops.length * 15;
+        }
+
+        const mapsUrl = generateGoogleMapsUrl(stops);
+
+        const route = await storage.createRoute({
+          date: format(new Date(), "yyyy-MM-dd"),
+          dayOfWeek: dayOfWeek,
+          stopsJson: stops,
+          routeLink: mapsUrl,
+          totalDistance,
+          estimatedTime,
+          status: "draft",
+          stopCount: stops.length,
+          driverId: null,
+          driverName: null,
+        });
+
+        createdRoutes.push(route);
+      }
+    }
+
+    return createdRoutes;
+  }
+
   app.post("/api/routes/generate", async (req: Request, res: Response) => {
     try {
       const { driverCount, dayOfWeek } = req.body;
@@ -636,165 +768,39 @@ export async function registerRoutes(
         return res.status(400).json({ message: "No locations to generate routes from" });
       }
 
-      // Filter locations by day if specified, or group by day assignments
+      const createdRoutes: Route[] = [];
       const targetDay = dayOfWeek ? dayOfWeek.toLowerCase() : null;
-      
-      // Get locations that have day assignments
-      let locations: Location[];
+
       if (targetDay) {
-        // Filter to only locations assigned to this specific day
-        locations = allLocations.filter(loc => loc.daysOfWeek && loc.daysOfWeek.includes(targetDay));
-        if (locations.length === 0) {
+        // Generate routes for a specific day
+        const dayLocations = allLocations.filter(loc => loc.daysOfWeek && loc.daysOfWeek.includes(targetDay));
+        if (dayLocations.length === 0) {
           return res.status(400).json({ message: `No locations are scheduled for ${dayOfWeek}. Assign days to delivery stops first.` });
         }
-      } else {
-        // Use all locations that have at least one day assigned
-        locations = allLocations.filter(loc => loc.daysOfWeek && loc.daysOfWeek.length > 0);
-        if (locations.length === 0) {
-          // Fallback: if no days assigned, use all locations
-          locations = allLocations;
-        }
-      }
-
-      // Clear existing routes for the specified day, or all routes if no day specified
-      if (targetDay) {
+        
+        // Clear existing routes for this day
         await storage.clearRoutesByDay(targetDay);
+        
+        const routes = await generateRoutesForDay(dayLocations, driverCount, targetDay);
+        createdRoutes.push(...routes);
       } else {
+        // Generate routes for ALL days that have locations
+        // First, clear all existing routes
         await storage.clearRoutes();
-      }
-
-      // Check if locations have coordinates for geographic optimization
-      const locationsWithCoords = locations.filter(loc => loc.lat != null && loc.lng != null);
-      const hasCoordinates = locationsWithCoords.length === locations.length && locations.length > 0;
-
-      const createdRoutes: any[] = [];
-
-      if (hasCoordinates) {
-        // Use geographic clustering (K-means) + nearest-neighbor optimization
-        const clusters = kMeansClustering(locations, driverCount);
-
-        for (const cluster of clusters) {
-          if (cluster.length === 0) continue;
-
-          // Apply nearest-neighbor ordering within each cluster
-          const orderedLocations = nearestNeighborOrdering(cluster);
-
-          // Create route stops with optimized sequence
-          let stops: RouteStop[] = orderedLocations.map((loc, index) => ({
-            id: randomUUID(),
-            locationId: loc.id,
-            address: loc.address,
-            customerName: loc.customerName,
-            serviceType: loc.serviceType || undefined,
-            notes: loc.notes || undefined,
-            lat: loc.lat || undefined,
-            lng: loc.lng || undefined,
-            sequence: index + 1,
-          }));
-
-          // Try Google Routes API optimization for better results
-          let totalDistance: number | null = null;
-          let estimatedTime: number | null = null;
-          const googleResult = await optimizeRouteWithGoogle(stops);
+        
+        // Group locations by each day they're assigned to
+        for (const day of validDays) {
+          const dayLocations = allLocations.filter(loc => loc.daysOfWeek && loc.daysOfWeek.includes(day));
           
-          if (googleResult) {
-            // Use Google's optimized order, real driving distance and time
-            stops = googleResult.optimizedStops;
-            totalDistance = googleResult.totalDistanceKm;
-            estimatedTime = googleResult.estimatedTimeMinutes;
-            console.log(`Route optimized with Google: ${stops.length} stops, ${totalDistance}km, ${estimatedTime} min`);
-          } else {
-            // Fall back to Haversine distance calculation
-            totalDistance = calculateRouteDistance(stops);
-            // Estimate driving time: assume average 40 km/h + 5 min per stop
-            estimatedTime = totalDistance ? Math.round((totalDistance / 40) * 60) + (stops.length * 5) : stops.length * 15;
-            console.log(`Route using nearest-neighbor: ${stops.length} stops, ${totalDistance}km (Haversine), ${estimatedTime} min est`);
+          if (dayLocations.length > 0) {
+            console.log(`Generating routes for ${day}: ${dayLocations.length} locations`);
+            const routes = await generateRoutesForDay(dayLocations, driverCount, day);
+            createdRoutes.push(...routes);
           }
-
-          // Generate Google Maps URL with all stops
-          const mapsUrl = generateGoogleMapsUrl(stops);
-
-          const route = await storage.createRoute({
-            date: format(new Date(), "yyyy-MM-dd"),
-            dayOfWeek: dayOfWeek ? dayOfWeek.toLowerCase() : null,
-            stopsJson: stops,
-            routeLink: mapsUrl,
-            totalDistance,
-            estimatedTime,
-            status: "draft",
-            stopCount: stops.length,
-            driverId: null,
-            driverName: null,
-          });
-
-          createdRoutes.push(route);
         }
-      } else {
-        // Fallback: Simple round-robin division (no coordinates available)
-        const stopsPerDriver = Math.ceil(locations.length / driverCount);
-
-        for (let i = 0; i < driverCount; i++) {
-          const startIndex = i * stopsPerDriver;
-          const endIndex = Math.min(startIndex + stopsPerDriver, locations.length);
-          
-          if (startIndex >= locations.length) break;
-
-          const routeLocations = locations.slice(startIndex, endIndex);
-          
-          // Create route stops from locations
-          let stops: RouteStop[] = routeLocations.map((loc, index) => ({
-            id: randomUUID(),
-            locationId: loc.id,
-            address: loc.address,
-            customerName: loc.customerName,
-            serviceType: loc.serviceType || undefined,
-            notes: loc.notes || undefined,
-            lat: loc.lat || undefined,
-            lng: loc.lng || undefined,
-            sequence: index + 1,
-          }));
-
-          // Try Google Routes API optimization if stops have coordinates
-          let totalDistance: number | null = null;
-          let estimatedTime: number | null = null;
-          const stopsHaveCoords = stops.every(s => s.lat != null && s.lng != null);
-          
-          if (stopsHaveCoords) {
-            const googleResult = await optimizeRouteWithGoogle(stops);
-            if (googleResult) {
-              stops = googleResult.optimizedStops;
-              totalDistance = googleResult.totalDistanceKm;
-              estimatedTime = googleResult.estimatedTimeMinutes;
-              console.log(`Route optimized with Google: ${stops.length} stops, ${totalDistance}km, ${estimatedTime} min`);
-            } else {
-              // Fall back to Haversine distance calculation
-              totalDistance = calculateRouteDistance(stops);
-              // Estimate driving time: assume average 40 km/h + 5 min per stop
-              estimatedTime = totalDistance ? Math.round((totalDistance / 40) * 60) + (stops.length * 5) : stops.length * 15;
-              console.log(`Route using round-robin: ${stops.length} stops, ${totalDistance}km (Haversine), ${estimatedTime} min est`);
-            }
-          } else {
-            // No coordinates - use rough estimate
-            estimatedTime = stops.length * 15;
-          }
-
-          // Generate Google Maps URL with all stops
-          const mapsUrl = generateGoogleMapsUrl(stops);
-
-          const route = await storage.createRoute({
-            date: format(new Date(), "yyyy-MM-dd"),
-            dayOfWeek: dayOfWeek ? dayOfWeek.toLowerCase() : null,
-            stopsJson: stops,
-            routeLink: mapsUrl,
-            totalDistance,
-            estimatedTime,
-            status: "draft",
-            stopCount: stops.length,
-            driverId: null,
-            driverName: null,
-          });
-
-          createdRoutes.push(route);
+        
+        if (createdRoutes.length === 0) {
+          return res.status(400).json({ message: "No locations have day assignments. Assign days to delivery stops first." });
         }
       }
 
