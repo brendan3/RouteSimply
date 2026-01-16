@@ -19,6 +19,7 @@ import type { Route, User } from "@shared/schema";
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const FALLBACK_COLORS = ["#3B82F6", "#22C55E", "#A855F7", "#F97316", "#EC4899", "#14B8A6", "#6366F1", "#EF4444"];
+const UNASSIGNED_COLOR = "#9CA3AF"; // Neutral gray for unassigned routes
 
 export default function AdminCalendarPage() {
   const [viewMode, setViewMode] = useState<"weekly" | "monthly">(() => {
@@ -119,7 +120,7 @@ export default function AdminCalendarPage() {
           <button
             key={route.id}
             className="w-full text-left px-2 py-1 rounded text-xs text-white cursor-pointer hover:opacity-90 transition-opacity"
-            style={{ backgroundColor: route.driverColor || getDriverColor(route.driverId || "") }}
+            style={{ backgroundColor: route.driverId ? (route.driverColor || getDriverColor(route.driverId)) : UNASSIGNED_COLOR }}
             onClick={() => setSelectedRoute(route)}
             data-testid={`calendar-route-${route.id}`}
           >
@@ -243,7 +244,7 @@ export default function AdminCalendarPage() {
                       <button
                         key={route.id}
                         className="w-full text-left px-1 py-0.5 rounded text-[10px] text-white truncate cursor-pointer hover:opacity-90 transition-opacity"
-                        style={{ backgroundColor: route.driverColor || getDriverColor(route.driverId || "") }}
+                        style={{ backgroundColor: route.driverId ? (route.driverColor || getDriverColor(route.driverId)) : UNASSIGNED_COLOR }}
                         onClick={() => setSelectedRoute(route)}
                         data-testid={`calendar-monthly-route-${route.id}`}
                       >

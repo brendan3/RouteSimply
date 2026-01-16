@@ -35,16 +35,7 @@ const DAYS_OF_WEEK = [
   { value: "sunday", label: "Sun" },
 ];
 
-const ROUTE_COLORS = [
-  "bg-blue-500",
-  "bg-green-500",
-  "bg-purple-500",
-  "bg-orange-500",
-  "bg-pink-500",
-  "bg-teal-500",
-  "bg-indigo-500",
-  "bg-red-500",
-];
+const UNASSIGNED_COLOR = "#9CA3AF"; // Neutral gray for unassigned routes
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -154,7 +145,7 @@ function CalendarView({ routes, drivers, calendarDate, onDateChange, onAssign }:
                       key={route.id}
                       onClick={() => !route.driverId && onAssign(route)}
                       className={`px-1.5 py-0.5 rounded text-xs text-white truncate ${!route.driverId ? "cursor-pointer hover-elevate" : ""}`}
-                      style={{ backgroundColor: route.driverColor || getDriverColor(route.driverId || "") }}
+                      style={{ backgroundColor: route.driverId ? (route.driverColor || getDriverColor(route.driverId)) : UNASSIGNED_COLOR }}
                       title={`${route.driverName || "Unassigned"} - ${route.stopCount} stops`}
                       data-testid={`calendar-route-${route.id}`}
                     >

@@ -44,6 +44,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 const FALLBACK_COLORS = ["#3B82F6", "#22C55E", "#A855F7", "#F97316", "#EC4899", "#14B8A6", "#6366F1", "#EF4444"];
+const UNASSIGNED_COLOR = "#9CA3AF"; // Neutral gray for unassigned routes
 
 const BALTIMORE_CENTER = { lat: 39.2904, lng: -76.6122 };
 
@@ -409,7 +410,7 @@ export function RouteMapView({ routes }: RouteMapViewProps) {
 
     filteredRoutes.forEach((route, routeIndex) => {
       const stops = (route.stopsJson || []) as RouteStop[];
-      const color = route.driverColor || FALLBACK_COLORS[routeIndex % FALLBACK_COLORS.length];
+      const color = route.driverId ? (route.driverColor || FALLBACK_COLORS[routeIndex % FALLBACK_COLORS.length]) : UNASSIGNED_COLOR;
       const isSelected = route.id === selectedRouteId;
       const opacity = selectedRouteId ? (isSelected ? 1 : 0.3) : 1;
 
@@ -577,7 +578,7 @@ export function RouteMapView({ routes }: RouteMapViewProps) {
                   <div
                     className="w-3 h-3 rounded-full"
                     style={{
-                      backgroundColor: route.driverColor || FALLBACK_COLORS[index % FALLBACK_COLORS.length],
+                      backgroundColor: route.driverId ? (route.driverColor || FALLBACK_COLORS[index % FALLBACK_COLORS.length]) : UNASSIGNED_COLOR,
                     }}
                   />
                   <span
