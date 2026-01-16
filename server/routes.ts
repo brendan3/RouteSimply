@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { format } from "date-fns";
-import type { RouteStop, InsertLocation, InsertRoute, Location } from "@shared/schema";
+import type { RouteStop, InsertLocation, InsertRoute, Location, Route } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import {
@@ -660,7 +660,8 @@ export async function registerRoutes(
   async function generateRoutesForDay(
     dayLocations: Location[],
     driverCount: number,
-    dayOfWeek: string
+    dayOfWeek: string,
+    scheduledDate?: string
   ): Promise<Route[]> {
     const createdRoutes: Route[] = [];
     
@@ -739,7 +740,7 @@ export async function registerRoutes(
         const mapsUrl = generateGoogleMapsUrl(stops);
 
         const route = await storage.createRoute({
-          date: format(new Date(), "yyyy-MM-dd"),
+          date: scheduledDate || format(new Date(), "yyyy-MM-dd"),
           dayOfWeek: dayOfWeek,
           stopsJson: stops,
           routeLink: mapsUrl,
@@ -812,7 +813,7 @@ export async function registerRoutes(
         const mapsUrl = generateGoogleMapsUrl(stops);
 
         const route = await storage.createRoute({
-          date: format(new Date(), "yyyy-MM-dd"),
+          date: scheduledDate || format(new Date(), "yyyy-MM-dd"),
           dayOfWeek: dayOfWeek,
           stopsJson: stops,
           routeLink: mapsUrl,
@@ -833,7 +834,7 @@ export async function registerRoutes(
 
   app.post("/api/routes/generate", async (req: Request, res: Response) => {
     try {
-      const { driverCount, dayOfWeek } = req.body;
+      const { driverCount, dayOfWeek, scheduledDate } = req.body;
 
       if (!driverCount || driverCount < 1 || driverCount > 10) {
         return res.status(400).json({ message: "Driver count must be between 1 and 10" });
@@ -854,14 +855,25 @@ export async function registerRoutes(
       const createdRoutes: Route[] = [];
       const targetDay = dayOfWeek ? dayOfWeek.toLowerCase() : null;
 
-      if (targetDay) {
-        // Generate routes for a specific day
+      if (targetDay && scheduledDate) {
+        // Generate routes for a specific date
         const dayLocations = allLocations.filter(loc => loc.daysOfWeek && loc.daysOfWeek.includes(targetDay));
         if (dayLocations.length === 0) {
           return res.status(400).json({ message: `No locations are scheduled for ${dayOfWeek}. Assign days to delivery stops first.` });
         }
         
-        // Clear existing routes for this day
+        // Clear existing routes for this specific date
+        await storage.clearRoutesByDate(scheduledDate);
+        
+        const routes = await generateRoutesForDay(dayLocations, driverCount, targetDay, scheduledDate);
+        createdRoutes.push(...routes);
+      } else if (targetDay) {
+        // Legacy: Generate routes for a day (without specific date)
+        const dayLocations = allLocations.filter(loc => loc.daysOfWeek && loc.daysOfWeek.includes(targetDay));
+        if (dayLocations.length === 0) {
+          return res.status(400).json({ message: `No locations are scheduled for ${dayOfWeek}. Assign days to delivery stops first.` });
+        }
+        
         await storage.clearRoutesByDay(targetDay);
         
         const routes = await generateRoutesForDay(dayLocations, driverCount, targetDay);

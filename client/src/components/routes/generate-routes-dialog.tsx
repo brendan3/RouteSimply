@@ -22,7 +22,7 @@ interface GenerateRoutesDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   locationCount: number;
-  onGenerate: (driverCount: number, dayOfWeek?: string) => void;
+  onGenerate: (driverCount: number, dayOfWeek: string, scheduledDate: string) => void;
   isLoading?: boolean;
   defaultDay?: string;
 }
@@ -38,41 +38,55 @@ export function GenerateRoutesDialog({
   defaultDay,
 }: GenerateRoutesDialogProps) {
   const [driverCount, setDriverCount] = useState<string>("2");
-  const [dayOfWeek, setDayOfWeek] = useState<string>(defaultDay || "monday");
 
-  // Build days with their next occurrence dates
+  // Build days with their next occurrence dates (next 14 days)
   const daysWithDates = useMemo(() => {
     const today = new Date();
-    const weekStart = startOfWeek(today, { weekStartsOn: 0 }); // Sunday
+    today.setHours(0, 0, 0, 0);
+    const options: { value: string; label: string; dayOfWeek: string }[] = [];
     
-    return DAY_VALUES.map((dayValue, index) => {
-      // Get the date for this day in the current week
-      let dayDate = addDays(weekStart, index);
+    // Generate next 14 days
+    for (let i = 0; i < 14; i++) {
+      const date = addDays(today, i);
+      const dayIndex = date.getDay();
+      const dayOfWeek = DAY_VALUES[dayIndex];
+      const dayName = dayOfWeek.charAt(0).toUpperCase() + dayOfWeek.slice(1);
+      const dateStr = format(date, "yyyy-MM-dd");
+      const displayDate = format(date, "MMM d");
       
-      // If the day has passed, show next week's date
-      if (dayDate < today) {
-        dayDate = addDays(dayDate, 7);
-      }
-      
-      const dayName = dayValue.charAt(0).toUpperCase() + dayValue.slice(1);
-      const dateStr = format(dayDate, "MMM d");
-      
-      return {
-        value: dayValue,
-        label: `${dayName} - ${dateStr}`,
-      };
-    });
+      options.push({
+        value: dateStr, // Store the actual date as the value
+        label: `${dayName} - ${displayDate}`,
+        dayOfWeek,
+      });
+    }
+    
+    return options;
   }, []);
 
-  // Sync dayOfWeek state when defaultDay changes or dialog opens
+  // Default to the first available date
+  const [selectedDate, setSelectedDate] = useState<string>(daysWithDates[0]?.value || "");
+
+  // Sync selected date when dialog opens or defaults change
   useEffect(() => {
-    if (open && defaultDay) {
-      setDayOfWeek(defaultDay);
+    if (open && daysWithDates.length > 0) {
+      // If defaultDay is provided, find the next occurrence of that day
+      if (defaultDay) {
+        const matchingDay = daysWithDates.find(d => d.dayOfWeek === defaultDay);
+        if (matchingDay) {
+          setSelectedDate(matchingDay.value);
+          return;
+        }
+      }
+      setSelectedDate(daysWithDates[0].value);
     }
-  }, [open, defaultDay]);
+  }, [open, defaultDay, daysWithDates]);
 
   const handleGenerate = () => {
-    onGenerate(parseInt(driverCount), dayOfWeek);
+    const selectedOption = daysWithDates.find(d => d.value === selectedDate);
+    if (selectedOption) {
+      onGenerate(parseInt(driverCount), selectedOption.dayOfWeek, selectedDate);
+    }
   };
 
   const stopsPerDriver = Math.ceil(locationCount / parseInt(driverCount));
@@ -92,9 +106,9 @@ export function GenerateRoutesDialog({
 
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="day-of-week">Day of Week</Label>
-            <Select value={dayOfWeek} onValueChange={setDayOfWeek}>
-              <SelectTrigger id="day-of-week" data-testid="select-day-of-week">
+            <Label htmlFor="scheduled-date">Schedule Date</Label>
+            <Select value={selectedDate} onValueChange={setSelectedDate}>
+              <SelectTrigger id="scheduled-date" data-testid="select-scheduled-date">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

@@ -54,8 +54,8 @@ export default function AdminRoutesPage() {
   });
 
   const generateRoutesMutation = useMutation({
-    mutationFn: async ({ driverCount, dayOfWeek }: { driverCount: number; dayOfWeek?: string }) => {
-      return apiRequest<Route[]>("POST", "/api/routes/generate", { driverCount, dayOfWeek });
+    mutationFn: async ({ driverCount, dayOfWeek, scheduledDate }: { driverCount: number; dayOfWeek: string; scheduledDate: string }) => {
+      return apiRequest<Route[]>("POST", "/api/routes/generate", { driverCount, dayOfWeek, scheduledDate });
     },
     onSuccess: () => {
       setShowGenerateDialog(false);
@@ -327,7 +327,7 @@ export default function AdminRoutesPage() {
         open={showGenerateDialog}
         onOpenChange={setShowGenerateDialog}
         locationCount={locations.length}
-        onGenerate={(count, dayOfWeek) => generateRoutesMutation.mutate({ driverCount: count, dayOfWeek })}
+        onGenerate={(count, dayOfWeek, scheduledDate) => generateRoutesMutation.mutate({ driverCount: count, dayOfWeek, scheduledDate })}
         defaultDay={selectedDay !== "all" ? selectedDay : undefined}
         isLoading={generateRoutesMutation.isPending}
       />

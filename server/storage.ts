@@ -44,6 +44,7 @@ export interface IStorage {
   deleteRoute(id: string): Promise<void>;
   clearRoutes(): Promise<void>;
   clearRoutesByDay(dayOfWeek: string): Promise<void>;
+  clearRoutesByDate(date: string): Promise<void>;
 
   // Time Entries
   getTimeEntry(id: string): Promise<TimeEntry | undefined>;
@@ -151,6 +152,10 @@ export class DatabaseStorage implements IStorage {
 
   async clearRoutesByDay(dayOfWeek: string): Promise<void> {
     await db.delete(routes).where(eq(routes.dayOfWeek, dayOfWeek));
+  }
+
+  async clearRoutesByDate(date: string): Promise<void> {
+    await db.delete(routes).where(eq(routes.date, date));
   }
 
   // Time Entries
