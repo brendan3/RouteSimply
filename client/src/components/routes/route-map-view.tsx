@@ -23,10 +23,164 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import type { Route, RouteStop } from "@shared/schema";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 const ROUTE_COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"];
 
 const BALTIMORE_CENTER = { lat: 39.2904, lng: -76.6122 };
+
+interface SortableStopCardProps {
+  stop: RouteStop;
+  index: number;
+  color: string | null;
+  routes: Route[];
+  selectedRouteId: string;
+  onMoveUp: (index: number) => void;
+  onMoveDown: (index: number) => void;
+  onMoveToRoute: (stopId: string, targetRouteId: string) => void;
+  stopsCount: number;
+  isReordering: boolean;
+  isMoving: boolean;
+}
+
+function SortableStopCard({
+  stop,
+  index,
+  color,
+  routes,
+  selectedRouteId,
+  onMoveUp,
+  onMoveDown,
+  onMoveToRoute,
+  stopsCount,
+  isReordering,
+  isMoving,
+}: SortableStopCardProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: stop.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 1,
+  };
+
+  return (
+    <Card
+      ref={setNodeRef}
+      style={style}
+      className={`p-3 ${isDragging ? "shadow-lg ring-2 ring-primary" : ""}`}
+      data-testid={`stop-card-${stop.id}`}
+    >
+      <div className="flex items-start gap-2">
+        <div className="flex flex-col items-center gap-1 pt-1">
+          <div
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing touch-none"
+            data-testid={`drag-handle-${stop.id}`}
+          >
+            <GripVertical className="w-4 h-4 text-muted-foreground" />
+          </div>
+          <div
+            className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold text-white"
+            style={{ backgroundColor: color || undefined }}
+          >
+            {index + 1}
+          </div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium truncate">{stop.customerName}</p>
+          <p className="text-xs text-muted-foreground truncate">{stop.address}</p>
+          {stop.serviceType && (
+            <p className="text-xs text-muted-foreground mt-0.5">{stop.serviceType}</p>
+          )}
+          <div className="flex items-center gap-1 mt-2">
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-7 w-7"
+              onClick={() => onMoveUp(index)}
+              disabled={index === 0 || isReordering}
+              data-testid={`button-move-up-${stop.id}`}
+            >
+              <ChevronUp className="w-4 h-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="outline"
+              className="h-7 w-7"
+              onClick={() => onMoveDown(index)}
+              disabled={index === stopsCount - 1 || isReordering}
+              data-testid={`button-move-down-${stop.id}`}
+            >
+              <ChevronDown className="w-4 h-4" />
+            </Button>
+            {routes.length > 1 && (
+              <Select
+                onValueChange={(value) => onMoveToRoute(stop.id, value)}
+                disabled={isMoving}
+              >
+                <SelectTrigger
+                  className="h-7 w-auto text-xs px-2"
+                  data-testid={`select-move-stop-${stop.id}`}
+                >
+                  <ArrowRightLeft className="w-3 h-3 mr-1" />
+                  <SelectValue placeholder="Move" />
+                </SelectTrigger>
+                <SelectContent>
+                  {routes
+                    .filter((r) => r.id !== selectedRouteId)
+                    .map((route) => {
+                      const routeColor =
+                        ROUTE_COLORS[
+                          routes.findIndex((r) => r.id === route.id) %
+                            ROUTE_COLORS.length
+                        ];
+                      return (
+                        <SelectItem key={route.id} value={route.id}>
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-2 h-2 rounded-full"
+                              style={{ backgroundColor: routeColor }}
+                            />
+                            <span>{route.driverName || "Unassigned"}</span>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
 
 interface RouteMapViewProps {
   routes: Route[];
@@ -60,6 +214,36 @@ export function RouteMapView({ routes }: RouteMapViewProps) {
   const selectedStops = selectedRoute
     ? ((selectedRoute.stopsJson || []) as RouteStop[])
     : [];
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over || !selectedRouteId || active.id === over.id) return;
+
+    const oldIndex = selectedStops.findIndex((stop) => stop.id === active.id);
+    const newIndex = selectedStops.findIndex((stop) => stop.id === over.id);
+
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const newStops = arrayMove(selectedStops, oldIndex, newIndex);
+    const updatedStops = newStops.map((stop, idx) => ({
+      ...stop,
+      sequence: idx + 1,
+    }));
+
+    reorderStopsMutation.mutate({ routeId: selectedRouteId, stops: updatedStops });
+  };
 
   const reorderStopsMutation = useMutation({
     mutationFn: async ({
@@ -415,112 +599,33 @@ export function RouteMapView({ routes }: RouteMapViewProps) {
           ) : (
             <ScrollArea className="h-full">
               <div className="p-2 space-y-2">
-                {selectedStops.map((stop, index) => (
-                  <Card
-                    key={stop.id}
-                    className="p-3"
-                    data-testid={`stop-card-${stop.id}`}
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={selectedStops.map((s) => s.id)}
+                    strategy={verticalListSortingStrategy}
                   >
-                    <div className="flex items-start gap-2">
-                      <div className="flex flex-col items-center gap-1 pt-1">
-                        <GripVertical className="w-4 h-4 text-muted-foreground" />
-                        <div
-                          className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold text-white"
-                          style={{
-                            backgroundColor: selectedRouteColor || undefined,
-                          }}
-                        >
-                          {index + 1}
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {stop.customerName}
-                        </p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {stop.address}
-                        </p>
-                        {stop.serviceType && (
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {stop.serviceType}
-                          </p>
-                        )}
-                        <div className="flex items-center gap-1 mt-2">
-                          <Button
-                            size="icon"
-                            variant="outline"
-                            className="h-7 w-7"
-                            onClick={() => handleMoveUp(index)}
-                            disabled={
-                              index === 0 || reorderStopsMutation.isPending
-                            }
-                            data-testid={`button-move-up-${stop.id}`}
-                          >
-                            <ChevronUp className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="outline"
-                            className="h-7 w-7"
-                            onClick={() => handleMoveDown(index)}
-                            disabled={
-                              index === selectedStops.length - 1 ||
-                              reorderStopsMutation.isPending
-                            }
-                            data-testid={`button-move-down-${stop.id}`}
-                          >
-                            <ChevronDown className="w-4 h-4" />
-                          </Button>
-                          {routes.length > 1 && (
-                            <Select
-                              onValueChange={(value) =>
-                                handleMoveToRoute(stop.id, value)
-                              }
-                              disabled={moveStopMutation.isPending}
-                            >
-                              <SelectTrigger
-                                className="h-7 w-auto text-xs px-2"
-                                data-testid={`select-move-stop-${stop.id}`}
-                              >
-                                <ArrowRightLeft className="w-3 h-3 mr-1" />
-                                <SelectValue placeholder="Move" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {routes
-                                  .filter((r) => r.id !== selectedRouteId)
-                                  .map((route, rIndex) => {
-                                    const routeColor =
-                                      ROUTE_COLORS[
-                                        routes.findIndex((r) => r.id === route.id) %
-                                          ROUTE_COLORS.length
-                                      ];
-                                    return (
-                                      <SelectItem
-                                        key={route.id}
-                                        value={route.id}
-                                      >
-                                        <div className="flex items-center gap-2">
-                                          <div
-                                            className="w-2 h-2 rounded-full"
-                                            style={{
-                                              backgroundColor: routeColor,
-                                            }}
-                                          />
-                                          <span>
-                                            {route.driverName || "Unassigned"}
-                                          </span>
-                                        </div>
-                                      </SelectItem>
-                                    );
-                                  })}
-                              </SelectContent>
-                            </Select>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
+                    {selectedStops.map((stop, index) => (
+                      <SortableStopCard
+                        key={stop.id}
+                        stop={stop}
+                        index={index}
+                        color={selectedRouteColor}
+                        routes={routes}
+                        selectedRouteId={selectedRouteId!}
+                        onMoveUp={handleMoveUp}
+                        onMoveDown={handleMoveDown}
+                        onMoveToRoute={handleMoveToRoute}
+                        stopsCount={selectedStops.length}
+                        isReordering={reorderStopsMutation.isPending}
+                        isMoving={moveStopMutation.isPending}
+                      />
+                    ))}
+                  </SortableContext>
+                </DndContext>
                 {selectedStops.length === 0 && (
                   <div className="text-center py-8 text-muted-foreground text-sm">
                     No stops in this route
