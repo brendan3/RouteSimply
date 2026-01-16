@@ -27,7 +27,9 @@ export function RouteCard({
   isDragging,
   showDragHandle = false 
 }: RouteCardProps) {
-  const stops = (route.stopsJson || []) as RouteStop[];
+  const rawStops = (route.stopsJson || []) as RouteStop[];
+  // Filter out any corrupt/incomplete stops that don't have required data
+  const stops = rawStops.filter(stop => stop.id && stop.customerName && stop.address);
   const deliveryStops = stops.filter(stop => 
     !stop.customerName?.startsWith("Start: Warehouse") && 
     !stop.customerName?.startsWith("End: Warehouse")
