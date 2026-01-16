@@ -1,14 +1,16 @@
-import { MapPin, Clock, Navigation, GripVertical, User, ChevronRight, Calendar } from "lucide-react";
+import { MapPin, Clock, Navigation, GripVertical, User, ChevronRight, Calendar, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Route, RouteStop } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import { format, parseISO } from "date-fns";
 
 interface RouteCardProps {
   route: Route;
   onEdit?: () => void;
   onAssign?: () => void;
+  onDelete?: () => void;
   isDragging?: boolean;
   showDragHandle?: boolean;
 }
@@ -17,6 +19,7 @@ export function RouteCard({
   route, 
   onEdit, 
   onAssign, 
+  onDelete,
   isDragging,
   showDragHandle = false 
 }: RouteCardProps) {
@@ -53,10 +56,11 @@ export function RouteCard({
               {route.status === "assigned" && "Assigned"}
               {route.status === "published" && "Published"}
             </Badge>
-            {route.dayOfWeek && (
+            {(route.date || route.dayOfWeek) && (
               <Badge variant="outline" className="text-xs font-medium capitalize">
                 <Calendar className="w-3 h-3 mr-1" />
-                {route.dayOfWeek}
+                {route.date ? format(parseISO(route.date), "MMM d") : ""} 
+                {route.dayOfWeek && ` (${route.dayOfWeek.slice(0, 3)})`}
               </Badge>
             )}
             {hasDriver && (
@@ -171,6 +175,16 @@ export function RouteCard({
                 >
                   <ChevronRight className="w-4 h-4" />
                 </a>
+              </Button>
+            )}
+            {onDelete && (
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={onDelete}
+                data-testid={`button-delete-route-${route.id}`}
+              >
+                <Trash2 className="w-4 h-4 text-muted-foreground" />
               </Button>
             )}
           </div>

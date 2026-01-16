@@ -140,6 +140,23 @@ export default function AdminRoutesPage() {
     },
   });
 
+  const deleteRouteMutation = useMutation({
+    mutationFn: async (routeId: string) => {
+      return apiRequest("DELETE", `/api/routes/${routeId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/routes"] });
+      toast({ title: "Route deleted" });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to delete route",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleUpload = (file: File) => {
     setUploadError(null);
     setUploadSuccess(false);
@@ -299,14 +316,15 @@ export default function AdminRoutesPage() {
             <TabsContent value="all">
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {filteredRoutes.map((route) => (
-                <RouteCard
-                  key={route.id}
-                  route={route}
-                  onAssign={() => handleAssign(route)}
-                />
-              ))}
-            </div>
-          </TabsContent>
+                  <RouteCard
+                    key={route.id}
+                    route={route}
+                    onAssign={() => handleAssign(route)}
+                    onDelete={() => deleteRouteMutation.mutate(route.id)}
+                  />
+                ))}
+              </div>
+            </TabsContent>
 
           <TabsContent value="draft">
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -315,6 +333,7 @@ export default function AdminRoutesPage() {
                   key={route.id}
                   route={route}
                   onAssign={() => handleAssign(route)}
+                  onDelete={() => deleteRouteMutation.mutate(route.id)}
                 />
               ))}
             </div>
@@ -323,7 +342,11 @@ export default function AdminRoutesPage() {
           <TabsContent value="assigned">
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {assignedRoutes.map((route) => (
-                <RouteCard key={route.id} route={route} />
+                <RouteCard
+                  key={route.id}
+                  route={route}
+                  onDelete={() => deleteRouteMutation.mutate(route.id)}
+                />
               ))}
             </div>
           </TabsContent>
@@ -331,7 +354,11 @@ export default function AdminRoutesPage() {
             <TabsContent value="published">
               <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 {publishedRoutes.map((route) => (
-                  <RouteCard key={route.id} route={route} />
+                  <RouteCard
+                    key={route.id}
+                    route={route}
+                    onDelete={() => deleteRouteMutation.mutate(route.id)}
+                  />
                 ))}
               </div>
             </TabsContent>

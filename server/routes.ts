@@ -1060,6 +1060,18 @@ export async function registerRoutes(
     }
   });
 
+  // Delete a route
+  app.delete("/api/routes/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteRoute(id);
+      return res.json({ message: "Route deleted successfully" });
+    } catch (error) {
+      console.error("Delete route error:", error);
+      return res.status(500).json({ message: "Failed to delete route" });
+    }
+  });
+
   // ============ TIME ENTRIES ROUTES ============
   app.get("/api/time-entries", async (_req: Request, res: Response) => {
     try {
