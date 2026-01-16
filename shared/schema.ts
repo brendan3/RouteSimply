@@ -80,6 +80,7 @@ export const materials = pgTable("materials", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: text("name").notNull(),
   category: text("category"), // optional category for grouping (e.g., "Mats", "Paper Products")
+  stockQuantity: integer("stock_quantity").default(0), // total inventory on hand
 });
 
 // Location-Material junction table - links materials to locations
@@ -199,6 +200,11 @@ export type LocationMaterial = typeof locationMaterials.$inferSelect;
 // Extended type for location materials with material details
 export interface LocationMaterialWithDetails extends LocationMaterial {
   material?: Material;
+}
+
+// Extended type for materials with aggregated quantities
+export interface MaterialWithQuantities extends Material {
+  assignedQuantity: number; // total quantity assigned across all locations
 }
 
 // API response types

@@ -1,10 +1,11 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { db } from "./db";
 import multer from "multer";
 import { parse } from "csv-parse/sync";
 import { format } from "date-fns";
-import type { RouteStop, InsertLocation, InsertRoute, Location, Route, InsertMaterial } from "@shared/schema";
+import type { RouteStop, InsertLocation, InsertRoute, Location, Route, InsertMaterial, MaterialWithQuantities } from "@shared/schema";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import {
@@ -12,7 +13,10 @@ import {
   insertWorkLocationSchema,
   insertMaterialSchema,
   insertLocationMaterialSchema,
+  materials,
+  locationMaterials,
 } from "@shared/schema";
+import { eq, sql } from "drizzle-orm";
 import OpenAI from "openai";
 import * as fs from "fs";
 
@@ -1514,11 +1518,32 @@ export async function registerRoutes(
 
   // ============ MATERIALS ROUTES ============
 
-  // Get all materials
+  // Get all materials with aggregated quantities
   app.get("/api/materials", async (_req: Request, res: Response) => {
     try {
       const allMaterials = await storage.getAllMaterials();
-      return res.json(allMaterials);
+      
+      // Get aggregated assigned quantities from locationMaterials
+      const assignedQuantities = await db
+        .select({
+          materialId: locationMaterials.materialId,
+          totalAssigned: sql<number>`COALESCE(SUM(${locationMaterials.quantity}), 0)`.as('total_assigned'),
+        })
+        .from(locationMaterials)
+        .groupBy(locationMaterials.materialId);
+      
+      // Create a map for quick lookup
+      const assignedMap = new Map(
+        assignedQuantities.map(aq => [aq.materialId, Number(aq.totalAssigned)])
+      );
+      
+      // Combine materials with their assigned quantities
+      const materialsWithQuantities: MaterialWithQuantities[] = allMaterials.map(material => ({
+        ...material,
+        assignedQuantity: assignedMap.get(material.id) || 0,
+      }));
+      
+      return res.json(materialsWithQuantities);
     } catch (error) {
       console.error("Get materials error:", error);
       return res.status(500).json({ message: "Failed to fetch materials" });
@@ -1558,6 +1583,12 @@ export async function registerRoutes(
   });
 
   // Update material
+  const updateMaterialSchema = z.object({
+    name: z.string().min(1, "Name is required").optional(),
+    category: z.string().nullable().optional(),
+    stockQuantity: z.number().int().min(0).optional(),
+  });
+
   app.patch("/api/materials/:id", async (req: Request, res: Response) => {
     try {
       const material = await storage.getMaterial(req.params.id);
@@ -1565,10 +1596,18 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Material not found" });
       }
 
-      const { name, category } = req.body;
+      const parseResult = updateMaterialSchema.safeParse(req.body);
+      if (!parseResult.success) {
+        return res.status(400).json({
+          message: parseResult.error.errors[0]?.message || "Invalid request body"
+        });
+      }
+
+      const { name, category, stockQuantity } = parseResult.data;
       const updateData: Partial<InsertMaterial> = {};
       if (name !== undefined) updateData.name = name;
       if (category !== undefined) updateData.category = category;
+      if (stockQuantity !== undefined) updateData.stockQuantity = stockQuantity;
 
       const updated = await storage.updateMaterial(req.params.id, updateData);
       return res.json(updated);

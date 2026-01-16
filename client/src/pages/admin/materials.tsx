@@ -5,9 +5,16 @@ import { EmptyState } from "@/components/common/empty-state";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -16,33 +23,39 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
-import { Layers, Plus, Pencil, Trash2, Upload } from "lucide-react";
-import type { Material, InsertMaterial } from "@shared/schema";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Layers, Plus, Pencil, Trash2, Upload, ArrowUpDown, Search } from "lucide-react";
+import type { MaterialWithQuantities, InsertMaterial } from "@shared/schema";
+
+type SortField = "id" | "name" | "category" | "assignedQuantity" | "stockQuantity";
+type SortDirection = "asc" | "desc";
 
 export default function AdminMaterialsPage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showUploadDialog, setShowUploadDialog] = useState(false);
-  const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
+  const [editingMaterial, setEditingMaterial] = useState<MaterialWithQuantities | null>(null);
   const [formData, setFormData] = useState({
     name: "",
     category: "",
+    stockQuantity: 0,
   });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortField, setSortField] = useState<SortField>("name");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
 
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
-  const { data: materials = [], isLoading } = useQuery<Material[]>({
+  const { data: materials = [], isLoading } = useQuery<MaterialWithQuantities[]>({
     queryKey: ["/api/materials"],
   });
 
   const createMutation = useMutation({
     mutationFn: async (data: InsertMaterial) => {
-      return apiRequest<Material>("POST", "/api/materials", data);
+      return apiRequest<MaterialWithQuantities>("POST", "/api/materials", data);
     },
     onSuccess: () => {
       setShowAddDialog(false);
-      setFormData({ name: "", category: "" });
+      setFormData({ name: "", category: "", stockQuantity: 0 });
       queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
       toast({ title: "Material created successfully" });
     },
@@ -57,11 +70,11 @@ export default function AdminMaterialsPage() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<InsertMaterial> }) => {
-      return apiRequest<Material>("PATCH", `/api/materials/${id}`, data);
+      return apiRequest<MaterialWithQuantities>("PATCH", `/api/materials/${id}`, data);
     },
     onSuccess: () => {
       setEditingMaterial(null);
-      setFormData({ name: "", category: "" });
+      setFormData({ name: "", category: "", stockQuantity: 0 });
       queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
       toast({ title: "Material updated successfully" });
     },
@@ -131,6 +144,7 @@ export default function AdminMaterialsPage() {
     createMutation.mutate({
       name: formData.name,
       category: formData.category || null,
+      stockQuantity: formData.stockQuantity || 0,
     });
   };
 
@@ -148,25 +162,75 @@ export default function AdminMaterialsPage() {
       data: {
         name: formData.name,
         category: formData.category || null,
+        stockQuantity: formData.stockQuantity || 0,
       },
     });
   };
 
-  const openEditDialog = (material: Material) => {
+  const openEditDialog = (material: MaterialWithQuantities) => {
     setEditingMaterial(material);
     setFormData({
       name: material.name,
       category: material.category || "",
+      stockQuantity: material.stockQuantity || 0,
     });
   };
 
   const closeDialogs = () => {
     setShowAddDialog(false);
     setEditingMaterial(null);
-    setFormData({ name: "", category: "" });
+    setFormData({ name: "", category: "", stockQuantity: 0 });
   };
 
-  const categories = Array.from(new Set(materials.filter(m => m.category).map(m => m.category))) as string[];
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="ml-1 w-3 h-3 text-muted-foreground/50" />;
+    }
+    return (
+      <ArrowUpDown className={`ml-1 w-3 h-3 ${sortDirection === "asc" ? "text-primary" : "text-primary rotate-180"}`} />
+    );
+  };
+
+  const filteredAndSortedMaterials = materials
+    .filter((material) => {
+      if (!searchQuery) return true;
+      const query = searchQuery.toLowerCase();
+      return (
+        material.name.toLowerCase().includes(query) ||
+        material.category?.toLowerCase().includes(query) ||
+        material.id.toLowerCase().includes(query)
+      );
+    })
+    .sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case "id":
+          comparison = a.id.localeCompare(b.id);
+          break;
+        case "name":
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case "category":
+          comparison = (a.category || "").localeCompare(b.category || "");
+          break;
+        case "assignedQuantity":
+          comparison = (a.assignedQuantity || 0) - (b.assignedQuantity || 0);
+          break;
+        case "stockQuantity":
+          comparison = (a.stockQuantity || 0) - (b.stockQuantity || 0);
+          break;
+      }
+      return sortDirection === "asc" ? comparison : -comparison;
+    });
 
   return (
     <AdminLayout
@@ -200,59 +264,130 @@ export default function AdminMaterialsPage() {
           }
         />
       ) : (
-        <div className="space-y-6">
-          {categories.length > 0 ? (
-            <>
-              {categories.map((category) => (
-                <div key={category}>
-                  <h2 className="text-lg font-semibold text-foreground mb-4">{category}</h2>
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {materials
-                      .filter((m) => m.category === category)
-                      .map((material) => (
-                        <MaterialCard
-                          key={material.id}
-                          material={material}
-                          onEdit={() => openEditDialog(material)}
-                          onDelete={() => deleteMutation.mutate(material.id)}
-                          isDeleting={deleteMutation.isPending}
-                        />
-                      ))}
-                  </div>
-                </div>
-              ))}
-              {materials.filter((m) => !m.category).length > 0 && (
-                <div>
-                  <h2 className="text-lg font-semibold text-foreground mb-4">Uncategorized</h2>
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    {materials
-                      .filter((m) => !m.category)
-                      .map((material) => (
-                        <MaterialCard
-                          key={material.id}
-                          material={material}
-                          onEdit={() => openEditDialog(material)}
-                          onDelete={() => deleteMutation.mutate(material.id)}
-                          isDeleting={deleteMutation.isPending}
-                        />
-                      ))}
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {materials.map((material) => (
-                <MaterialCard
-                  key={material.id}
-                  material={material}
-                  onEdit={() => openEditDialog(material)}
-                  onDelete={() => deleteMutation.mutate(material.id)}
-                  isDeleting={deleteMutation.isPending}
-                />
-              ))}
-            </div>
-          )}
+        <div className="space-y-4">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, category, or ID..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+              data-testid="input-search-materials"
+            />
+          </div>
+
+          <Card>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead
+                    className="cursor-pointer select-none"
+                    onClick={() => handleSort("id")}
+                    data-testid="sort-id"
+                  >
+                    <div className="flex items-center">
+                      Item ID
+                      <SortIcon field="id" />
+                    </div>
+                  </TableHead>
+                  <TableHead
+                    className="cursor-pointer select-none"
+                    onClick={() => handleSort("name")}
+                    data-testid="sort-name"
+                  >
+                    <div className="flex items-center">
+                      Item
+                      <SortIcon field="name" />
+                    </div>
+                  </TableHead>
+                  <TableHead
+                    className="cursor-pointer select-none"
+                    onClick={() => handleSort("category")}
+                    data-testid="sort-category"
+                  >
+                    <div className="flex items-center">
+                      Category
+                      <SortIcon field="category" />
+                    </div>
+                  </TableHead>
+                  <TableHead
+                    className="cursor-pointer select-none text-right"
+                    onClick={() => handleSort("assignedQuantity")}
+                    data-testid="sort-assigned"
+                  >
+                    <div className="flex items-center justify-end">
+                      Assigned Qty
+                      <SortIcon field="assignedQuantity" />
+                    </div>
+                  </TableHead>
+                  <TableHead
+                    className="cursor-pointer select-none text-right"
+                    onClick={() => handleSort("stockQuantity")}
+                    data-testid="sort-stock"
+                  >
+                    <div className="flex items-center justify-end">
+                      Stock Qty
+                      <SortIcon field="stockQuantity" />
+                    </div>
+                  </TableHead>
+                  <TableHead className="w-[100px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredAndSortedMaterials.map((material) => (
+                  <TableRow key={material.id} data-testid={`material-row-${material.id}`}>
+                    <TableCell className="font-mono text-sm text-muted-foreground">
+                      <span title={material.id} data-testid={`text-id-${material.id}`}>
+                        {material.id.slice(0, 8)}...
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <p className="font-medium text-foreground" data-testid={`text-name-${material.id}`}>{material.name}</p>
+                    </TableCell>
+                    <TableCell>
+                      <p className="text-muted-foreground" data-testid={`text-category-${material.id}`}>{material.category || "-"}</p>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <span className="font-medium" data-testid={`text-assigned-${material.id}`}>{material.assignedQuantity || 0}</span>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <span className="font-medium" data-testid={`text-stock-${material.id}`}>{material.stockQuantity || 0}</span>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditDialog(material)}
+                          data-testid={`button-edit-${material.id}`}
+                        >
+                          <Pencil className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteMutation.mutate(material.id)}
+                          disabled={deleteMutation.isPending}
+                          data-testid={`button-delete-${material.id}`}
+                        >
+                          <Trash2 className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            {filteredAndSortedMaterials.length === 0 && (
+              <div className="p-8 text-center text-muted-foreground">
+                <Layers className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p className="font-medium">No materials found</p>
+                <p className="text-sm mt-1">
+                  {searchQuery ? "Try adjusting your search" : "Add materials to get started"}
+                </p>
+              </div>
+            )}
+          </Card>
         </div>
       )}
 
@@ -285,6 +420,18 @@ export default function AdminMaterialsPage() {
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
                 placeholder="e.g., Mats, Paper Products, Supplies"
                 data-testid="input-material-category"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="stockQuantity">Stock Quantity</Label>
+              <Input
+                id="stockQuantity"
+                type="number"
+                value={formData.stockQuantity}
+                onChange={(e) => setFormData({ ...formData, stockQuantity: parseInt(e.target.value) || 0 })}
+                placeholder="0"
+                data-testid="input-material-stock"
               />
             </div>
           </div>
@@ -341,6 +488,18 @@ export default function AdminMaterialsPage() {
                 data-testid="input-edit-category"
               />
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-stockQuantity">Stock Quantity</Label>
+              <Input
+                id="edit-stockQuantity"
+                type="number"
+                value={formData.stockQuantity}
+                onChange={(e) => setFormData({ ...formData, stockQuantity: parseInt(e.target.value) || 0 })}
+                placeholder="0"
+                data-testid="input-edit-stock"
+              />
+            </div>
           </div>
 
           <div className="flex gap-3">
@@ -369,7 +528,7 @@ export default function AdminMaterialsPage() {
           <DialogHeader>
             <DialogTitle>Upload Materials CSV</DialogTitle>
             <DialogDescription>
-              Upload a CSV file with materials. Required column: name. Optional column: category.
+              Upload a CSV file with materials. Required column: name. Optional columns: category, stock_quantity.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -389,56 +548,5 @@ export default function AdminMaterialsPage() {
         </DialogContent>
       </Dialog>
     </AdminLayout>
-  );
-}
-
-function MaterialCard({
-  material,
-  onEdit,
-  onDelete,
-  isDeleting,
-}: {
-  material: Material;
-  onEdit: () => void;
-  onDelete: () => void;
-  isDeleting: boolean;
-}) {
-  return (
-    <Card className="p-5" data-testid={`material-card-${material.id}`}>
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-            <Layers className="w-5 h-5 text-primary" />
-          </div>
-          <div>
-            <p className="font-medium text-foreground">{material.name}</p>
-            {material.category && (
-              <Badge variant="secondary" className="mt-1 text-xs">
-                {material.category}
-              </Badge>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onEdit}
-            data-testid={`button-edit-${material.id}`}
-          >
-            <Pencil className="w-4 h-4 text-muted-foreground" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onDelete}
-            disabled={isDeleting}
-            data-testid={`button-delete-${material.id}`}
-          >
-            <Trash2 className="w-4 h-4 text-muted-foreground" />
-          </Button>
-        </div>
-      </div>
-    </Card>
   );
 }
