@@ -558,14 +558,22 @@ export async function registerRoutes(
   // ============ ROUTES ROUTES ============
   app.get("/api/routes", async (req: Request, res: Response) => {
     try {
-      const { driverId } = req.query;
+      const { driverId, dayOfWeek } = req.query;
       
       if (driverId) {
         const routes = await storage.getRoutesByDriver(driverId as string);
+        if (dayOfWeek) {
+          const filtered = routes.filter(r => r.dayOfWeek === (dayOfWeek as string).toLowerCase());
+          return res.json(filtered);
+        }
         return res.json(routes);
       }
 
       const routes = await storage.getAllRoutes();
+      if (dayOfWeek) {
+        const filtered = routes.filter(r => r.dayOfWeek === (dayOfWeek as string).toLowerCase());
+        return res.json(filtered);
+      }
       return res.json(routes);
     } catch (error) {
       console.error("Get routes error:", error);
@@ -575,10 +583,15 @@ export async function registerRoutes(
 
   app.post("/api/routes/generate", async (req: Request, res: Response) => {
     try {
-      const { driverCount } = req.body;
+      const { driverCount, dayOfWeek } = req.body;
 
       if (!driverCount || driverCount < 1 || driverCount > 10) {
         return res.status(400).json({ message: "Driver count must be between 1 and 10" });
+      }
+
+      const validDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      if (dayOfWeek && !validDays.includes(dayOfWeek.toLowerCase())) {
+        return res.status(400).json({ message: "Invalid day of week" });
       }
 
       // Get all locations
@@ -643,6 +656,7 @@ export async function registerRoutes(
 
           const route = await storage.createRoute({
             date: format(new Date(), "yyyy-MM-dd"),
+            dayOfWeek: dayOfWeek ? dayOfWeek.toLowerCase() : null,
             stopsJson: stops,
             routeLink: mapsUrl,
             totalDistance,
@@ -705,6 +719,7 @@ export async function registerRoutes(
 
           const route = await storage.createRoute({
             date: format(new Date(), "yyyy-MM-dd"),
+            dayOfWeek: dayOfWeek ? dayOfWeek.toLowerCase() : null,
             stopsJson: stops,
             routeLink: mapsUrl,
             totalDistance,

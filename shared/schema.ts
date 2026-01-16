@@ -29,6 +29,7 @@ export const locations = pgTable("locations", {
 export const routes = pgTable("routes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   date: date("date").notNull().default(sql`CURRENT_DATE`),
+  dayOfWeek: text("day_of_week"), // 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
   driverId: varchar("driver_id").references(() => users.id),
   driverName: text("driver_name"),
   stopsJson: json("stops_json").$type<RouteStop[]>().default([]),
