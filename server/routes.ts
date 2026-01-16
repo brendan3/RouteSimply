@@ -1584,6 +1584,7 @@ export async function registerRoutes(
 
   // Update material
   const updateMaterialSchema = z.object({
+    id: z.string().min(1, "Item ID is required").optional(),
     name: z.string().min(1, "Name is required").optional(),
     category: z.string().nullable().optional(),
     stockQuantity: z.number().int().min(0).optional(),
@@ -1603,8 +1604,9 @@ export async function registerRoutes(
         });
       }
 
-      const { name, category, stockQuantity } = parseResult.data;
+      const { id: newId, name, category, stockQuantity } = parseResult.data;
       const updateData: Partial<InsertMaterial> = {};
+      if (newId !== undefined) updateData.id = newId;
       if (name !== undefined) updateData.name = name;
       if (category !== undefined) updateData.category = category;
       if (stockQuantity !== undefined) updateData.stockQuantity = stockQuantity;

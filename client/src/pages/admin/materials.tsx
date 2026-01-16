@@ -35,6 +35,7 @@ export default function AdminMaterialsPage() {
   const [showUploadDialog, setShowUploadDialog] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<MaterialWithQuantities | null>(null);
   const [formData, setFormData] = useState({
+    id: "",
     name: "",
     category: "",
     stockQuantity: 0,
@@ -55,7 +56,7 @@ export default function AdminMaterialsPage() {
     },
     onSuccess: () => {
       setShowAddDialog(false);
-      setFormData({ name: "", category: "", stockQuantity: 0 });
+      setFormData({ id: "", name: "", category: "", stockQuantity: 0 });
       queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
       toast({ title: "Material created successfully" });
     },
@@ -74,7 +75,7 @@ export default function AdminMaterialsPage() {
     },
     onSuccess: () => {
       setEditingMaterial(null);
-      setFormData({ name: "", category: "", stockQuantity: 0 });
+      setFormData({ id: "", name: "", category: "", stockQuantity: 0 });
       queryClient.invalidateQueries({ queryKey: ["/api/materials"] });
       toast({ title: "Material updated successfully" });
     },
@@ -157,9 +158,18 @@ export default function AdminMaterialsPage() {
       });
       return;
     }
+    if (!formData.id) {
+      toast({
+        title: "Item ID is required",
+        description: "Please enter an Item ID",
+        variant: "destructive",
+      });
+      return;
+    }
     updateMutation.mutate({
       id: editingMaterial.id,
       data: {
+        id: formData.id !== editingMaterial.id ? formData.id : undefined,
         name: formData.name,
         category: formData.category || null,
         stockQuantity: formData.stockQuantity || 0,
@@ -170,6 +180,7 @@ export default function AdminMaterialsPage() {
   const openEditDialog = (material: MaterialWithQuantities) => {
     setEditingMaterial(material);
     setFormData({
+      id: material.id,
       name: material.name,
       category: material.category || "",
       stockQuantity: material.stockQuantity || 0,
@@ -179,7 +190,7 @@ export default function AdminMaterialsPage() {
   const closeDialogs = () => {
     setShowAddDialog(false);
     setEditingMaterial(null);
-    setFormData({ name: "", category: "", stockQuantity: 0 });
+    setFormData({ id: "", name: "", category: "", stockQuantity: 0 });
   };
 
   const handleSort = (field: SortField) => {
@@ -467,6 +478,17 @@ export default function AdminMaterialsPage() {
           </DialogHeader>
 
           <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-id">Item ID *</Label>
+              <Input
+                id="edit-id"
+                value={formData.id}
+                onChange={(e) => setFormData({ ...formData, id: e.target.value })}
+                placeholder="e.g., mat-001"
+                data-testid="input-edit-id"
+              />
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="edit-name">Name *</Label>
               <Input
