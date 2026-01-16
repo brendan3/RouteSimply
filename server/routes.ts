@@ -1076,6 +1076,23 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/routes/unpublish", async (_req: Request, res: Response) => {
+    try {
+      const routes = await storage.getAllRoutes();
+      
+      for (const route of routes) {
+        if (route.status === "published") {
+          await storage.updateRoute(route.id, { status: "assigned" });
+        }
+      }
+
+      return res.json({ message: "Routes unpublished successfully" });
+    } catch (error) {
+      console.error("Unpublish routes error:", error);
+      return res.status(500).json({ message: "Failed to unpublish routes" });
+    }
+  });
+
   // Refresh all route stops with updated coordinates from locations
   app.post("/api/routes/refresh-coordinates", async (_req: Request, res: Response) => {
     try {

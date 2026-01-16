@@ -111,6 +111,16 @@ export default function AdminRoutesPage() {
     },
   });
 
+  const unpublishRoutesMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest("POST", "/api/routes/unpublish");
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/routes"] });
+      toast({ title: "Routes unpublished successfully" });
+    },
+  });
+
   const deleteRouteMutation = useMutation({
     mutationFn: async (routeId: string) => {
       return apiRequest("DELETE", `/api/routes/${routeId}`);
@@ -265,6 +275,16 @@ export default function AdminRoutesPage() {
                     data-testid="button-publish-routes"
                   >
                     Publish All Routes
+                  </Button>
+                )}
+                {publishedRoutes.length > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={() => unpublishRoutesMutation.mutate()}
+                    disabled={unpublishRoutesMutation.isPending}
+                    data-testid="button-unpublish-routes"
+                  >
+                    Unpublish All Routes
                   </Button>
                 )}
               </div>

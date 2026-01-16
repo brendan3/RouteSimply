@@ -107,6 +107,7 @@ A mobile-optimized web application for managing mat delivery driver schedules, G
 - `PATCH /api/routes/:id/stops` - Update stop order within a route
 - `POST /api/routes/move-stop` - Move stop from one route to another
 - `POST /api/routes/publish` - Publish all assigned routes
+- `POST /api/routes/unpublish` - Unpublish all published routes (returns to assigned status)
 
 ### Config
 - `GET /api/config/maps-key` - Get Google Maps API key for frontend
