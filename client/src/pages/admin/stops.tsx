@@ -156,8 +156,11 @@ export default function AdminStopsPage() {
       result = result.filter((loc) => !loc.daysOfWeek || loc.daysOfWeek.length === 0);
     }
 
-    // Apply sorting only in list view
-    if (viewMode === "list") {
+    // Apply sorting - alphabetical by name in cards view, configurable in list view
+    if (viewMode === "cards") {
+      // Always sort alphabetically by customer name in cards view
+      result.sort((a, b) => a.customerName.localeCompare(b.customerName));
+    } else {
       result.sort((a, b) => {
         let comparison = 0;
         
