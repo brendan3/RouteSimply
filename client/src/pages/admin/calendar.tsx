@@ -9,18 +9,7 @@ import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, List } from "lucid
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval, addWeeks, subWeeks, addMonths, subMonths, isSameMonth, isToday } from "date-fns";
 import type { Route, User } from "@shared/schema";
 
-const DAYS_OF_WEEK_MAP: Record<string, number> = {
-  sunday: 0,
-  monday: 1,
-  tuesday: 2,
-  wednesday: 3,
-  thursday: 4,
-  friday: 5,
-  saturday: 6,
-};
-
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const DAY_FULL_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
 
 const ROUTE_COLORS = [
   "bg-blue-500",
@@ -52,9 +41,10 @@ export default function AdminCalendarPage() {
     return ROUTE_COLORS[index % ROUTE_COLORS.length];
   };
 
-  const getRoutesForDay = (dayOfWeek: string) => {
+  const getRoutesForDate = (date: Date) => {
+    const dateStr = format(date, "yyyy-MM-dd");
     return routes.filter(
-      (route) => route.dayOfWeek === dayOfWeek && (route.status === "assigned" || route.status === "published")
+      (route) => route.date === dateStr && (route.status === "assigned" || route.status === "published")
     );
   };
 
@@ -88,8 +78,8 @@ export default function AdminCalendarPage() {
   const monthEndWeek = endOfWeek(monthEnd, { weekStartsOn: 0 });
   const monthDays = eachDayOfInterval({ start: monthStartWeek, end: monthEndWeek });
 
-  const renderDayContent = (dayName: string) => {
-    const dayRoutes = getRoutesForDay(dayName.toLowerCase());
+  const renderDayContent = (date: Date) => {
+    const dayRoutes = getRoutesForDate(date);
     
     if (dayRoutes.length === 0) {
       return (
@@ -174,7 +164,6 @@ export default function AdminCalendarPage() {
           <div className="grid grid-cols-7 gap-4">
             {weekDays.map((day, index) => {
               const dayName = DAY_NAMES[day.getDay()];
-              const dayFullName = DAY_FULL_NAMES[day.getDay()];
               const dayIsToday = isToday(day);
 
               return (
@@ -185,7 +174,7 @@ export default function AdminCalendarPage() {
                       {format(day, "d")}
                     </p>
                   </div>
-                  {renderDayContent(dayFullName)}
+                  {renderDayContent(day)}
                 </div>
               );
             })}
@@ -202,11 +191,9 @@ export default function AdminCalendarPage() {
           </div>
           <div className="grid grid-cols-7 gap-1">
             {monthDays.map((day, index) => {
-              const dayName = DAY_NAMES[day.getDay()];
-              const dayFullName = DAY_FULL_NAMES[day.getDay()];
               const dayIsToday = isToday(day);
               const isCurrentMonth = isSameMonth(day, currentDate);
-              const dayRoutes = getRoutesForDay(dayFullName);
+              const dayRoutes = getRoutesForDate(day);
 
               return (
                 <div
