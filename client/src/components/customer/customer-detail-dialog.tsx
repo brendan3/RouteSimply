@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -19,9 +21,9 @@ import {
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { MapPin, Layers, Plus, X, Calendar, Minus } from "lucide-react";
+import { MapPin, Layers, Plus, X, Calendar, Minus, Pencil, Save } from "lucide-react";
 import type { Location, Material, LocationMaterialWithDetails } from "@shared/schema";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 interface CustomerDetailDialogProps {
   open: boolean;
@@ -42,6 +44,13 @@ export function CustomerDetailDialog({
 }: CustomerDetailDialogProps) {
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>("");
   const [newQuantity, setNewQuantity] = useState<number>(1);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({
+    customerName: "",
+    address: "",
+    serviceType: "",
+    notes: "",
+  });
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -136,10 +145,64 @@ export function CustomerDetailDialog({
     },
   });
 
+  const updateLocationMutation = useMutation({
+    mutationFn: async (data: { customerName: string; address: string; serviceType: string; notes: string }) => {
+      return apiRequest("PATCH", `/api/locations/${locationId}`, data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/locations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/locations", locationId] });
+      setIsEditing(false);
+      toast({ title: "Location updated successfully" });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update location",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Populate edit form when location data loads
+  useEffect(() => {
+    if (location) {
+      setEditForm({
+        customerName: location.customerName || "",
+        address: location.address || "",
+        serviceType: location.serviceType || "",
+        notes: location.notes || "",
+      });
+    }
+  }, [location]);
+
+  // Reset editing state when dialog closes
+  useEffect(() => {
+    if (!open) {
+      setIsEditing(false);
+    }
+  }, [open]);
+
   const handleAddMaterial = () => {
     if (selectedMaterialId) {
       addMaterialMutation.mutate({ materialId: selectedMaterialId, quantity: newQuantity });
     }
+  };
+
+  const handleSaveLocation = () => {
+    updateLocationMutation.mutate(editForm);
+  };
+
+  const handleCancelEdit = () => {
+    if (location) {
+      setEditForm({
+        customerName: location.customerName || "",
+        address: location.address || "",
+        serviceType: location.serviceType || "",
+        notes: location.notes || "",
+      });
+    }
+    setIsEditing(false);
   };
 
   const handleQuantityChange = (lm: LocationMaterialWithDetails, delta: number) => {
@@ -158,26 +221,111 @@ export function CustomerDetailDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-primary" />
-            {displayName}
+          <DialogTitle className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-5 h-5 text-primary" />
+              {isEditing ? "Edit Location" : displayName}
+            </div>
+            {isAdmin && !isEditing && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsEditing(true)}
+                data-testid="button-edit-location"
+              >
+                <Pencil className="w-4 h-4" />
+              </Button>
+            )}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            {displayAddress}
-          </div>
-
-          {displayDays.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap">
-              <Calendar className="w-4 h-4 text-muted-foreground" />
-              {displayDays.map((day) => (
-                <Badge key={day} variant="secondary" className="text-xs capitalize">
-                  {day}
-                </Badge>
-              ))}
+          {isEditing ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="customerName">Customer Name</Label>
+                <Input
+                  id="customerName"
+                  value={editForm.customerName}
+                  onChange={(e) => setEditForm({ ...editForm, customerName: e.target.value })}
+                  placeholder="Customer name"
+                  data-testid="input-customer-name"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="address">Address</Label>
+                <Input
+                  id="address"
+                  value={editForm.address}
+                  onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                  placeholder="Full address"
+                  data-testid="input-address"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="serviceType">Service Type</Label>
+                <Input
+                  id="serviceType"
+                  value={editForm.serviceType}
+                  onChange={(e) => setEditForm({ ...editForm, serviceType: e.target.value })}
+                  placeholder="e.g., Standard Mat Service"
+                  data-testid="input-service-type"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea
+                  id="notes"
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                  placeholder="Additional notes..."
+                  rows={3}
+                  data-testid="input-notes"
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button
+                  variant="outline"
+                  onClick={handleCancelEdit}
+                  disabled={updateLocationMutation.isPending}
+                  data-testid="button-cancel-edit"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveLocation}
+                  disabled={updateLocationMutation.isPending || !editForm.customerName || !editForm.address}
+                  data-testid="button-save-location"
+                >
+                  <Save className="w-4 h-4 mr-2" />
+                  {updateLocationMutation.isPending ? "Saving..." : "Save"}
+                </Button>
+              </div>
             </div>
+          ) : (
+            <>
+              <div className="text-sm text-muted-foreground">
+                {displayAddress}
+              </div>
+
+              {location?.serviceType && (
+                <div className="text-sm">
+                  <span className="font-medium">Service: </span>
+                  <span className="text-muted-foreground">{location.serviceType}</span>
+                </div>
+              )}
+
+              {displayDays.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                  {displayDays.map((day) => (
+                    <Badge key={day} variant="secondary" className="text-xs capitalize">
+                      {day}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
           <div className="border-t pt-4">
@@ -299,7 +447,7 @@ export function CustomerDetailDialog({
             )}
           </div>
 
-          {location?.notes && (
+          {!isEditing && location?.notes && (
             <div className="border-t pt-4">
               <h3 className="text-sm font-semibold mb-2">Notes</h3>
               <p className="text-sm text-muted-foreground">{location.notes}</p>

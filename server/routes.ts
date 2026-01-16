@@ -532,11 +532,17 @@ export async function registerRoutes(
   app.patch("/api/locations/:id", async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const { daysOfWeek } = req.body;
+      const { daysOfWeek, address, customerName, serviceType, notes } = req.body;
 
-      const location = await storage.updateLocation(id, {
-        daysOfWeek: daysOfWeek || null,
-      });
+      const updateData: Record<string, any> = {};
+      
+      if (daysOfWeek !== undefined) updateData.daysOfWeek = daysOfWeek || null;
+      if (address !== undefined) updateData.address = address;
+      if (customerName !== undefined) updateData.customerName = customerName;
+      if (serviceType !== undefined) updateData.serviceType = serviceType || null;
+      if (notes !== undefined) updateData.notes = notes || null;
+
+      const location = await storage.updateLocation(id, updateData);
 
       return res.json(location);
     } catch (error) {
