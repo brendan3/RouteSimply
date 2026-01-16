@@ -24,6 +24,10 @@ export function RouteCard({
   showDragHandle = false 
 }: RouteCardProps) {
   const stops = (route.stopsJson || []) as RouteStop[];
+  const deliveryStops = stops.filter(stop => 
+    !stop.customerName?.startsWith("Start: Warehouse") && 
+    !stop.customerName?.startsWith("End: Warehouse")
+  );
   const hasDriver = !!route.driverId || !!route.driverName;
 
   const statusColors = {
@@ -77,7 +81,7 @@ export function RouteCard({
                 <MapPin className="w-4 h-4 text-primary" />
               </div>
               <div>
-                <p className="text-lg font-semibold text-foreground">{stops.length}</p>
+                <p className="text-lg font-semibold text-foreground">{deliveryStops.length}</p>
                 <p className="text-xs text-muted-foreground">Stops</p>
               </div>
             </div>
@@ -89,9 +93,9 @@ export function RouteCard({
                 </div>
                 <div>
                   <p className="text-lg font-semibold text-foreground">
-                    {route.totalDistance.toFixed(1)}
+                    {(route.totalDistance * 0.621371).toFixed(1)}
                   </p>
-                  <p className="text-xs text-muted-foreground">km</p>
+                  <p className="text-xs text-muted-foreground">mi</p>
                 </div>
               </div>
             )}
@@ -133,7 +137,7 @@ export function RouteCard({
               ))}
               {stops.length > 3 && (
                 <p className="text-xs text-muted-foreground text-center py-1">
-                  +{stops.length - 3} more stops
+                  +{stops.length - 3} more
                 </p>
               )}
             </div>
