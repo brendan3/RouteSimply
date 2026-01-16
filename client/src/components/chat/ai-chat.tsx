@@ -66,31 +66,63 @@ export function AIChat() {
     }
   };
 
+  const parseInlineElements = (text: string, keyPrefix: string) => {
+    const parts: (string | JSX.Element)[] = [];
+    const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+    let lastIndex = 0;
+    let match;
+    let partIndex = 0;
+
+    while ((match = linkRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(text.slice(lastIndex, match.index));
+      }
+      parts.push(
+        <a
+          key={`${keyPrefix}-link-${partIndex++}`}
+          href={match[2]}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-primary underline hover:text-primary/80 break-all"
+        >
+          {match[1]}
+        </a>
+      );
+      lastIndex = match.index + match[0].length;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push(text.slice(lastIndex));
+    }
+
+    return parts.length > 0 ? parts : text;
+  };
+
   const formatMessage = (content: string) => {
     const lines = content.split("\n");
     return lines.map((line, i) => {
       if (line.startsWith("# ")) {
-        return <h2 key={i} className="text-lg font-bold mt-2 mb-1">{line.slice(2)}</h2>;
+        return <h2 key={i} className="text-lg font-bold mt-2 mb-1">{parseInlineElements(line.slice(2), `h2-${i}`)}</h2>;
       }
       if (line.startsWith("## ")) {
-        return <h3 key={i} className="text-base font-semibold mt-2 mb-1">{line.slice(3)}</h3>;
+        return <h3 key={i} className="text-base font-semibold mt-2 mb-1">{parseInlineElements(line.slice(3), `h3-${i}`)}</h3>;
       }
       if (line.startsWith("### ")) {
-        return <h4 key={i} className="text-sm font-semibold mt-1 mb-1">{line.slice(4)}</h4>;
+        return <h4 key={i} className="text-sm font-semibold mt-1 mb-1">{parseInlineElements(line.slice(4), `h4-${i}`)}</h4>;
       }
       if (line.startsWith("- ")) {
-        return <li key={i} className="ml-4 text-sm">{line.slice(2)}</li>;
+        return <li key={i} className="ml-4 text-sm">{parseInlineElements(line.slice(2), `li-${i}`)}</li>;
       }
       if (line.match(/^\d+\.\s/)) {
-        return <li key={i} className="ml-4 text-sm list-decimal">{line.replace(/^\d+\.\s/, "")}</li>;
+        return <li key={i} className="ml-4 text-sm list-decimal">{parseInlineElements(line.replace(/^\d+\.\s/, ""), `ol-${i}`)}</li>;
       }
       if (line.startsWith("**") && line.endsWith("**")) {
-        return <p key={i} className="font-semibold text-sm">{line.slice(2, -2)}</p>;
+        return <p key={i} className="font-semibold text-sm">{parseInlineElements(line.slice(2, -2), `bold-${i}`)}</p>;
       }
       if (line.trim() === "") {
         return <br key={i} />;
       }
-      return <p key={i} className="text-sm">{line}</p>;
+      return <p key={i} className="text-sm">{parseInlineElements(line, `p-${i}`)}</p>;
     });
   };
 
