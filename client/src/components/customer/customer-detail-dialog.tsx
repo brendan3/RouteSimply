@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -18,7 +19,7 @@ import {
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { MapPin, Layers, Plus, X, Calendar } from "lucide-react";
+import { MapPin, Layers, Plus, X, Calendar, Minus } from "lucide-react";
 import type { Location, Material, LocationMaterialWithDetails } from "@shared/schema";
 import { useState } from "react";
 
@@ -40,6 +41,7 @@ export function CustomerDetailDialog({
   isAdmin = false,
 }: CustomerDetailDialogProps) {
   const [selectedMaterialId, setSelectedMaterialId] = useState<string>("");
+  const [newQuantity, setNewQuantity] = useState<number>(1);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -71,17 +73,34 @@ export function CustomerDetailDialog({
   });
 
   const addMaterialMutation = useMutation({
-    mutationFn: async (materialId: string) => {
-      return apiRequest("POST", `/api/locations/${locationId}/materials`, { materialId });
+    mutationFn: async ({ materialId, quantity }: { materialId: string; quantity: number }) => {
+      return apiRequest("POST", `/api/locations/${locationId}/materials`, { materialId, quantity });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/locations", locationId, "materials"] });
       setSelectedMaterialId("");
+      setNewQuantity(1);
       toast({ title: "Material added successfully" });
     },
     onError: (error: Error) => {
       toast({
         title: "Failed to add material",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateQuantityMutation = useMutation({
+    mutationFn: async ({ id, quantity }: { id: string; quantity: number }) => {
+      return apiRequest("PATCH", `/api/location-materials/${id}`, { quantity });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/locations", locationId, "materials"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to update quantity",
         description: error.message,
         variant: "destructive",
       });
@@ -107,8 +126,13 @@ export function CustomerDetailDialog({
 
   const handleAddMaterial = () => {
     if (selectedMaterialId) {
-      addMaterialMutation.mutate(selectedMaterialId);
+      addMaterialMutation.mutate({ materialId: selectedMaterialId, quantity: newQuantity });
     }
+  };
+
+  const handleQuantityChange = (lm: LocationMaterialWithDetails, delta: number) => {
+    const newQty = Math.max(1, (lm.quantity || 1) + delta);
+    updateQuantityMutation.mutate({ id: lm.id, quantity: newQty });
   };
 
   const assignedMaterialIds = locationMaterials.map((lm) => lm.materialId);
@@ -161,7 +185,7 @@ export function CustomerDetailDialog({
               <div className="space-y-2">
                 {locationMaterials.map((lm) => (
                   <Card key={lm.id} className="p-3 flex items-center justify-between" data-testid={`location-material-${lm.id}`}>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
                         <Layers className="w-4 h-4 text-primary" />
                       </div>
@@ -172,17 +196,51 @@ export function CustomerDetailDialog({
                         )}
                       </div>
                     </div>
-                    {isAdmin && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeMaterialMutation.mutate(lm.id)}
-                        disabled={removeMaterialMutation.isPending}
-                        data-testid={`button-remove-material-${lm.id}`}
-                      >
-                        <X className="w-4 h-4 text-muted-foreground" />
-                      </Button>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {isAdmin ? (
+                        <>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleQuantityChange(lm, -1)}
+                              disabled={updateQuantityMutation.isPending || (lm.quantity || 1) <= 1}
+                              data-testid={`button-decrease-qty-${lm.id}`}
+                            >
+                              <Minus className="w-3 h-3" />
+                            </Button>
+                            <span className="w-8 text-center text-sm font-medium" data-testid={`qty-${lm.id}`}>
+                              {lm.quantity || 1}
+                            </span>
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleQuantityChange(lm, 1)}
+                              disabled={updateQuantityMutation.isPending}
+                              data-testid={`button-increase-qty-${lm.id}`}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </Button>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            onClick={() => removeMaterialMutation.mutate(lm.id)}
+                            disabled={removeMaterialMutation.isPending}
+                            data-testid={`button-remove-material-${lm.id}`}
+                          >
+                            <X className="w-4 h-4 text-muted-foreground" />
+                          </Button>
+                        </>
+                      ) : (
+                        <Badge variant="secondary" className="text-xs">
+                          Qty: {lm.quantity || 1}
+                        </Badge>
+                      )}
+                    </div>
                   </Card>
                 ))}
               </div>
@@ -203,6 +261,14 @@ export function CustomerDetailDialog({
                     ))}
                   </SelectContent>
                 </Select>
+                <Input
+                  type="number"
+                  min={1}
+                  value={newQuantity}
+                  onChange={(e) => setNewQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="w-16 text-center"
+                  data-testid="input-quantity"
+                />
                 <Button
                   size="icon"
                   onClick={handleAddMaterial}

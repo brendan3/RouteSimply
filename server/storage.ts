@@ -85,6 +85,7 @@ export interface IStorage {
   // Location Materials
   getLocationMaterials(locationId: string): Promise<LocationMaterialWithDetails[]>;
   addLocationMaterial(data: InsertLocationMaterial): Promise<LocationMaterial>;
+  updateLocationMaterial(id: string, data: Partial<InsertLocationMaterial>): Promise<LocationMaterial>;
   removeLocationMaterial(id: string): Promise<void>;
   removeAllLocationMaterials(locationId: string): Promise<void>;
 }
@@ -326,6 +327,14 @@ export class DatabaseStorage implements IStorage {
 
   async addLocationMaterial(data: InsertLocationMaterial): Promise<LocationMaterial> {
     const [lm] = await db.insert(locationMaterials).values(data).returning();
+    return lm;
+  }
+
+  async updateLocationMaterial(id: string, data: Partial<InsertLocationMaterial>): Promise<LocationMaterial> {
+    const [lm] = await db.update(locationMaterials)
+      .set(data)
+      .where(eq(locationMaterials.id, id))
+      .returning();
     return lm;
   }
 

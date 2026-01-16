@@ -1695,6 +1695,23 @@ export async function registerRoutes(
     }
   });
 
+  // Update location material (quantity)
+  app.patch("/api/location-materials/:id", async (req: Request, res: Response) => {
+    try {
+      const { quantity } = req.body;
+      
+      if (quantity === undefined || quantity < 1) {
+        return res.status(400).json({ message: "Quantity must be at least 1" });
+      }
+
+      const updated = await storage.updateLocationMaterial(req.params.id, { quantity });
+      return res.json(updated);
+    } catch (error) {
+      console.error("Update location material error:", error);
+      return res.status(500).json({ message: "Failed to update material quantity" });
+    }
+  });
+
   // Remove material from location
   app.delete("/api/location-materials/:id", async (req: Request, res: Response) => {
     try {
