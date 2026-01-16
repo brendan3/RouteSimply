@@ -11,6 +11,7 @@ export const users = pgTable("users", {
   role: text("role").notNull().default("driver"), // 'admin' or 'driver'
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
+  color: text("color"), // hex color code for driver name display
 });
 
 // Locations table (delivery stops)
@@ -33,6 +34,7 @@ export const routes = pgTable("routes", {
   dayOfWeek: text("day_of_week"), // 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
   driverId: varchar("driver_id").references(() => users.id),
   driverName: text("driver_name"),
+  driverColor: text("driver_color"), // hex color code for driver name display
   stopsJson: json("stops_json").$type<RouteStop[]>().default([]),
   routeLink: text("route_link"),
   totalDistance: real("total_distance"),

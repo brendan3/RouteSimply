@@ -504,6 +504,20 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/users/:id", async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { color } = req.body;
+
+      const user = await storage.updateUser(id, { color });
+      const { password: _, ...userWithoutPassword } = user;
+      return res.json(userWithoutPassword);
+    } catch (error) {
+      console.error("Update user error:", error);
+      return res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+
   // ============ LOCATIONS (Delivery Stops) ROUTES ============
   app.get("/api/locations", async (_req: Request, res: Response) => {
     try {
