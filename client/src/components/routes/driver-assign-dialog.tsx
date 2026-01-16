@@ -22,7 +22,7 @@ interface DriverAssignDialogProps {
   onOpenChange: (open: boolean) => void;
   route: Route | null;
   drivers: User[];
-  onAssign: (routeId: string, driverId: string, driverName: string) => void;
+  onAssign: (routeId: string, driverId: string, driverName: string, driverColor: string | null) => void;
   isLoading?: boolean;
 }
 
@@ -40,7 +40,7 @@ export function DriverAssignDialog({
     if (route && selectedDriverId) {
       const driver = drivers.find((d) => d.id === selectedDriverId);
       if (driver) {
-        onAssign(route.id, driver.id, driver.name);
+        onAssign(route.id, driver.id, driver.name, driver.color || null);
         setSelectedDriverId("");
       }
     }
@@ -76,7 +76,15 @@ export function DriverAssignDialog({
                 ) : (
                   availableDrivers.map((driver) => (
                     <SelectItem key={driver.id} value={driver.id}>
-                      {driver.name}
+                      <div className="flex items-center gap-2">
+                        {driver.color && (
+                          <div 
+                            className="w-3 h-3 rounded-full"
+                            style={{ backgroundColor: driver.color }}
+                          />
+                        )}
+                        <span style={{ color: driver.color || undefined }}>{driver.name}</span>
+                      </div>
                     </SelectItem>
                   ))
                 )}

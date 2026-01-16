@@ -72,9 +72,14 @@ export function RouteCard({
               </Badge>
             )}
             {hasDriver && (
-              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <User className="w-4 h-4" />
-                <span className="truncate">{route.driverName || "Assigned"}</span>
+              <div className="flex items-center gap-1.5 text-sm">
+                <User className="w-4 h-4" style={{ color: route.driverColor || 'hsl(var(--muted-foreground))' }} />
+                <span 
+                  className="truncate font-medium" 
+                  style={{ color: route.driverColor || 'hsl(var(--muted-foreground))' }}
+                >
+                  {route.driverName || "Assigned"}
+                </span>
               </div>
             )}
           </div>

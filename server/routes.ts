@@ -1010,11 +1010,12 @@ export async function registerRoutes(
   app.patch("/api/routes/:id/assign", async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const { driverId, driverName } = req.body;
+      const { driverId, driverName, driverColor } = req.body;
 
       const route = await storage.updateRoute(id, {
         driverId,
         driverName,
+        driverColor,
         status: "assigned",
       });
 

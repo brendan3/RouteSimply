@@ -64,8 +64,11 @@ function CalendarView({ routes, drivers, calendarDate, onDateChange, onAssign }:
   const monthDays = eachDayOfInterval({ start: monthStartWeek, end: monthEndWeek });
 
   const getDriverColor = (driverId: string): string => {
+    const driver = drivers.find((d) => d.id === driverId);
+    if (driver?.color) return driver.color;
     const index = drivers.findIndex((d) => d.id === driverId);
-    return ROUTE_COLORS[index % ROUTE_COLORS.length];
+    const fallbackColors = ["#3B82F6", "#22C55E", "#A855F7", "#F97316", "#EC4899", "#14B8A6", "#6366F1", "#EF4444"];
+    return fallbackColors[index % fallbackColors.length];
   };
 
   const getRoutesForDate = (date: Date) => {
@@ -104,10 +107,14 @@ function CalendarView({ routes, drivers, calendarDate, onDateChange, onAssign }:
         </div>
         <h2 className="text-lg font-semibold">{format(calendarDate, "MMMM yyyy")}</h2>
         <div className="flex items-center gap-2">
-          {drivers.slice(0, 5).map((driver) => (
+          {drivers.filter(d => d.role === 'driver').slice(0, 5).map((driver) => (
             <div key={driver.id} className="flex items-center gap-1" data-testid={`legend-driver-${driver.id}`}>
-              <div className={`w-3 h-3 rounded-full ${getDriverColor(driver.id)}`} data-testid={`legend-color-${driver.id}`} />
-              <span className="text-xs text-muted-foreground" data-testid={`legend-name-${driver.id}`}>{driver.name.split(" ")[0]}</span>
+              <div 
+                className="w-3 h-3 rounded-full" 
+                style={{ backgroundColor: getDriverColor(driver.id) }}
+                data-testid={`legend-color-${driver.id}`} 
+              />
+              <span className="text-xs" style={{ color: driver.color || 'hsl(var(--muted-foreground))' }} data-testid={`legend-name-${driver.id}`}>{driver.name.split(" ")[0]}</span>
             </div>
           ))}
         </div>
@@ -146,7 +153,8 @@ function CalendarView({ routes, drivers, calendarDate, onDateChange, onAssign }:
                     <div
                       key={route.id}
                       onClick={() => !route.driverId && onAssign(route)}
-                      className={`px-1.5 py-0.5 rounded text-xs text-white truncate ${getDriverColor(route.driverId || "")} ${!route.driverId ? "cursor-pointer hover-elevate" : ""}`}
+                      className={`px-1.5 py-0.5 rounded text-xs text-white truncate ${!route.driverId ? "cursor-pointer hover-elevate" : ""}`}
+                      style={{ backgroundColor: route.driverColor || getDriverColor(route.driverId || "") }}
                       title={`${route.driverName || "Unassigned"} - ${route.stopCount} stops`}
                       data-testid={`calendar-route-${route.id}`}
                     >
@@ -229,14 +237,17 @@ export default function AdminRoutesPage() {
       routeId,
       driverId,
       driverName,
+      driverColor,
     }: {
       routeId: string;
       driverId: string;
       driverName: string;
+      driverColor: string | null;
     }) => {
       return apiRequest<Route>("PATCH", `/api/routes/${routeId}/assign`, {
         driverId,
         driverName,
+        driverColor,
       });
     },
     onSuccess: () => {
@@ -573,8 +584,8 @@ export default function AdminRoutesPage() {
         onOpenChange={setShowAssignDialog}
         route={selectedRoute}
         drivers={drivers}
-        onAssign={(routeId, driverId, driverName) =>
-          assignDriverMutation.mutate({ routeId, driverId, driverName })
+        onAssign={(routeId, driverId, driverName, driverColor) =>
+          assignDriverMutation.mutate({ routeId, driverId, driverName, driverColor })
         }
         isLoading={assignDriverMutation.isPending}
       />
