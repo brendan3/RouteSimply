@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { AdminLayout } from "@/components/layout/admin-layout";
-import { CSVUpload } from "@/components/upload/csv-upload";
 import { RouteCard } from "@/components/routes/route-card";
 import { RouteMapView } from "@/components/routes/route-map-view";
 import { GenerateRoutesDialog } from "@/components/routes/generate-routes-dialog";
@@ -9,11 +9,10 @@ import { DriverAssignDialog } from "@/components/routes/driver-assign-dialog";
 import { EmptyState } from "@/components/common/empty-state";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Map, Grid, Plus, Upload, RefreshCw, Download } from "lucide-react";
+import { Map, Grid, Plus, MapPin } from "lucide-react";
 import type { Route, Location, User } from "@shared/schema";
 
 const DAYS_OF_WEEK = [
@@ -32,15 +31,13 @@ function getCurrentDayOfWeek(): string {
 }
 
 export default function AdminRoutesPage() {
-  const [showUpload, setShowUpload] = useState(false);
   const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadSuccess, setUploadSuccess] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "map">("list");
   const [selectedDay, setSelectedDay] = useState<string>("all");
 
+  const [, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -54,32 +51,6 @@ export default function AdminRoutesPage() {
 
   const { data: drivers = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
-  });
-
-  const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append("file", file);
-      const response = await fetch("/api/locations/upload", {
-        method: "POST",
-        body: formData,
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Upload failed");
-      }
-      return response.json();
-    },
-    onSuccess: () => {
-      setUploadSuccess(true);
-      setUploadError(null);
-      queryClient.invalidateQueries({ queryKey: ["/api/locations"] });
-      toast({ title: "CSV uploaded successfully" });
-    },
-    onError: (error: Error) => {
-      setUploadError(error.message);
-      setUploadSuccess(false);
-    },
   });
 
   const generateRoutesMutation = useMutation({
@@ -157,12 +128,6 @@ export default function AdminRoutesPage() {
     },
   });
 
-  const handleUpload = (file: File) => {
-    setUploadError(null);
-    setUploadSuccess(false);
-    uploadMutation.mutate(file);
-  };
-
   const handleAssign = (route: Route) => {
     setSelectedRoute(route);
     setShowAssignDialog(true);
@@ -192,14 +157,6 @@ export default function AdminRoutesPage() {
       actions={
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
-            onClick={() => setShowUpload(!showUpload)}
-            data-testid="button-toggle-upload"
-          >
-            <Upload className="w-4 h-4 mr-2" />
-            Upload CSV
-          </Button>
-          <Button
             onClick={() => setShowGenerateDialog(true)}
             disabled={locations.length === 0}
             data-testid="button-generate-routes"
@@ -228,34 +185,34 @@ export default function AdminRoutesPage() {
         </div>
       }
     >
-      {showUpload && (
-        <Card className="p-6 mb-6" data-testid="csv-upload-section">
-          <h3 className="text-lg font-semibold text-foreground mb-4">
-            Upload Delivery Locations
-          </h3>
-          <CSVUpload
-            onUpload={handleUpload}
-            isLoading={uploadMutation.isPending}
-            error={uploadError}
-            success={uploadSuccess}
-          />
-        </Card>
-      )}
-
       {isLoading ? (
         <LoadingSpinner className="py-16" text="Loading routes..." />
       ) : routes.length === 0 ? (
-        <EmptyState
-          icon={Map}
-          title="No routes yet"
-          description="Upload a CSV file with delivery locations, then generate optimized routes for your drivers."
-          action={
-            <Button onClick={() => setShowUpload(true)} data-testid="button-first-upload">
-              <Upload className="w-4 h-4 mr-2" />
-              Upload Locations
-            </Button>
-          }
-        />
+        locations.length === 0 ? (
+          <EmptyState
+            icon={MapPin}
+            title="No delivery stops yet"
+            description="Add delivery stops first, then generate optimized routes for your drivers."
+            action={
+              <Button onClick={() => navigate("/admin/stops")} data-testid="button-go-to-stops">
+                <MapPin className="w-4 h-4 mr-2" />
+                Go to Delivery Stops
+              </Button>
+            }
+          />
+        ) : (
+          <EmptyState
+            icon={Map}
+            title="No routes yet"
+            description="Generate optimized routes from your delivery stops."
+            action={
+              <Button onClick={() => setShowGenerateDialog(true)} data-testid="button-generate-first-routes">
+                <Plus className="w-4 h-4 mr-2" />
+                Generate Routes
+              </Button>
+            }
+          />
+        )
       ) : viewMode === "map" ? (
         <RouteMapView routes={filteredRoutes} />
       ) : (
