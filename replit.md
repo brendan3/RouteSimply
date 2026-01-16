@@ -18,7 +18,7 @@ A mobile-optimized web application for managing mat delivery driver schedules, G
 
 ### State Persistence
 UI preferences persist across navigation using localStorage:
-- **Routes Page**: View mode (list/map), day filter, status tab
+- **Routes Page**: View mode (list/map/calendar), day filter, status tab, calendar date
 - **Delivery Stops Page**: View mode (cards/list), day filter
 - **Calendar Page**: View mode (weekly/monthly), current date
 
@@ -44,34 +44,40 @@ UI preferences persist across navigation using localStorage:
    - Locations can be assigned to multiple days (e.g., Tuesday AND Friday)
    - Search and filter delivery stops
 
-2. **Route Management**
-   - Auto-generate optimized routes per day using K-means clustering + nearest-neighbor algorithm
+2. **Confirm Route** (Route Generation Workflow)
+   - Select a date and review stops scheduled for that day
+   - Toggle individual stops to include/exclude from route generation
+   - **Generate Routes** button opens dialog to create optimized routes
+   - Auto-generate optimized routes using K-means clustering + nearest-neighbor algorithm
    - Google Routes API integration for optimal waypoint ordering
-   - **Routes automatically start and end at the Warehouse** (configured in Work Locations, default: 3700 Pennington Ave Baltimore, MD 21226)
+   - **Routes automatically start and end at the Warehouse** (configured in Work Locations)
    - **Date-specific scheduling**: Routes are generated for specific dates (not recurring weekly)
-   - Generate Routes dialog shows next 14 days with actual dates (e.g., "Monday - Jan 20")
-   - Interactive Map View with colored markers per route
+
+3. **Route Management** (Driver Assignment & Viewing)
+   - **List View**: Cards showing routes grouped by status (draft/assigned/published)
+   - **Map View**: Interactive map with colored markers per route
+   - **Calendar View**: Monthly calendar showing routes by date
    - Move stops up/down within a route or reassign to different drivers
    - Assign drivers to routes
    - Publish routes for drivers to see
    - Delete routes when needed
 
-3. **Calendar View**
+4. **Calendar View** (Separate Page)
    - Weekly view (default) showing routes per driver per day
    - Monthly view with route summaries per day
    - **Routes appear only on their specific scheduled date** (not every occurrence of that day)
    - Color-coded routes by driver
    - Navigation controls (back, forward, today)
 
-4. **Driver Management**
+5. **Driver Management**
    - Add/remove drivers and admins
    - View all team members
 
-5. **Time Tracking**
+6. **Time Tracking**
    - View all clock in/out entries
    - Export to CSV for payroll
 
-6. **Work Locations**
+7. **Work Locations**
    - Configure geofenced locations with auto-geocoding from address
    - Set GPS verification radius (default 100m)
 

@@ -14,6 +14,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { GenerateRoutesDialog } from "@/components/routes/generate-routes-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { 
@@ -25,10 +26,11 @@ import {
   ArrowRight, 
   CheckCircle2,
   XCircle,
-  Building2
+  Building2,
+  Plus
 } from "lucide-react";
 import { format, addDays } from "date-fns";
-import type { Location, RouteConfirmation } from "@shared/schema";
+import type { Location, RouteConfirmation, Route } from "@shared/schema";
 import { cn } from "@/lib/utils";
 
 const DAYS_OF_WEEK = [
@@ -51,6 +53,7 @@ export default function AdminConfirmRoutePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [localExclusions, setLocalExclusions] = useState<Set<string>>(new Set());
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showGenerateDialog, setShowGenerateDialog] = useState(false);
 
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -124,6 +127,25 @@ export default function AdminConfirmRoutePage() {
     },
   });
 
+  const generateRoutesMutation = useMutation({
+    mutationFn: async ({ driverCount, dayOfWeek, scheduledDate }: { driverCount: number; dayOfWeek: string; scheduledDate: string }) => {
+      return apiRequest<Route[]>("POST", "/api/routes/generate", { driverCount, dayOfWeek, scheduledDate });
+    },
+    onSuccess: () => {
+      setShowGenerateDialog(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/routes"] });
+      toast({ title: "Routes generated successfully" });
+      navigate("/admin");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to generate routes",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleToggleExclusion = (locationId: string) => {
     setLocalExclusions(prev => {
       const next = new Set(prev);
@@ -145,10 +167,6 @@ export default function AdminConfirmRoutePage() {
   const handleIncludeAll = () => {
     setLocalExclusions(new Set());
     setHasUnsavedChanges(true);
-  };
-
-  const handleProceedToRoutes = () => {
-    navigate("/admin");
   };
 
   const isLoading = locationsLoading || confirmationsLoading;
@@ -175,11 +193,12 @@ export default function AdminConfirmRoutePage() {
             {saveMutation.isPending ? "Saving..." : "Save"}
           </Button>
           <Button
-            onClick={handleProceedToRoutes}
-            data-testid="button-proceed-to-routes"
+            onClick={() => setShowGenerateDialog(true)}
+            disabled={includedCount === 0}
+            data-testid="button-generate-routes"
           >
-            Proceed to Routes
-            <ArrowRight className="w-4 h-4 ml-2" />
+            <Plus className="w-4 h-4 mr-2" />
+            Generate Routes
           </Button>
         </div>
       }
@@ -368,13 +387,13 @@ export default function AdminConfirmRoutePage() {
                       if (hasUnsavedChanges) {
                         saveMutation.mutate();
                       }
-                      handleProceedToRoutes();
+                      setShowGenerateDialog(true);
                     }}
-                    disabled={saveMutation.isPending}
-                    data-testid="button-save-and-proceed"
+                    disabled={saveMutation.isPending || includedCount === 0}
+                    data-testid="button-save-and-generate"
                   >
-                    {hasUnsavedChanges ? "Save & " : ""}Proceed to Routes
-                    <ArrowRight className="w-4 h-4 ml-2" />
+                    <Plus className="w-4 h-4 mr-2" />
+                    {hasUnsavedChanges ? "Save & " : ""}Generate Routes
                   </Button>
                 </div>
               </CardContent>
@@ -382,6 +401,16 @@ export default function AdminConfirmRoutePage() {
           </div>
         )}
       </div>
+
+      <GenerateRoutesDialog
+        open={showGenerateDialog}
+        onOpenChange={setShowGenerateDialog}
+        locationCount={includedCount}
+        onGenerate={(count, dayOfWeek, scheduledDate) => generateRoutesMutation.mutate({ driverCount: count, dayOfWeek, scheduledDate })}
+        defaultDay={dayOfWeek}
+        defaultDate={formattedDate}
+        isLoading={generateRoutesMutation.isPending}
+      />
     </AdminLayout>
   );
 }

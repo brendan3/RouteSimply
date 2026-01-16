@@ -4,15 +4,17 @@ import { useLocation } from "wouter";
 import { AdminLayout } from "@/components/layout/admin-layout";
 import { RouteCard } from "@/components/routes/route-card";
 import { RouteMapView } from "@/components/routes/route-map-view";
-import { GenerateRoutesDialog } from "@/components/routes/generate-routes-dialog";
 import { DriverAssignDialog } from "@/components/routes/driver-assign-dialog";
 import { EmptyState } from "@/components/common/empty-state";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Map, Grid, Plus, MapPin } from "lucide-react";
+import { Map, Grid, CalendarIcon, Plus, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
+import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, isSameMonth, isToday } from "date-fns";
 import type { Route, Location, User } from "@shared/schema";
 
 const DAYS_OF_WEEK = [
@@ -25,18 +27,147 @@ const DAYS_OF_WEEK = [
   { value: "sunday", label: "Sun" },
 ];
 
-function getCurrentDayOfWeek(): string {
-  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-  return days[new Date().getDay()];
+const ROUTE_COLORS = [
+  "bg-blue-500",
+  "bg-green-500",
+  "bg-purple-500",
+  "bg-orange-500",
+  "bg-pink-500",
+  "bg-teal-500",
+  "bg-indigo-500",
+  "bg-red-500",
+];
+
+const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+interface CalendarViewProps {
+  routes: Route[];
+  drivers: User[];
+  calendarDate: Date;
+  onDateChange: (date: Date) => void;
+  onAssign: (route: Route) => void;
+}
+
+function CalendarView({ routes, drivers, calendarDate, onDateChange, onAssign }: CalendarViewProps) {
+  const monthStart = startOfMonth(calendarDate);
+  const monthEnd = endOfMonth(calendarDate);
+  const monthStartWeek = startOfWeek(monthStart, { weekStartsOn: 0 });
+  const monthEndWeek = endOfWeek(monthEnd, { weekStartsOn: 0 });
+  const monthDays = eachDayOfInterval({ start: monthStartWeek, end: monthEndWeek });
+
+  const getDriverColor = (driverId: string): string => {
+    const index = drivers.findIndex((d) => d.id === driverId);
+    return ROUTE_COLORS[index % ROUTE_COLORS.length];
+  };
+
+  const getRoutesForDate = (date: Date) => {
+    const dateStr = format(date, "yyyy-MM-dd");
+    return routes.filter((route) => route.date === dateStr);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="icon" 
+            onClick={() => onDateChange(subMonths(calendarDate, 1))}
+            data-testid="button-calendar-prev"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </Button>
+          <Button 
+            variant="outline" 
+            size="icon" 
+            onClick={() => onDateChange(addMonths(calendarDate, 1))}
+            data-testid="button-calendar-next"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={() => onDateChange(new Date())}
+            data-testid="button-calendar-today"
+          >
+            Today
+          </Button>
+        </div>
+        <h2 className="text-lg font-semibold">{format(calendarDate, "MMMM yyyy")}</h2>
+        <div className="flex items-center gap-2">
+          {drivers.slice(0, 5).map((driver) => (
+            <div key={driver.id} className="flex items-center gap-1" data-testid={`legend-driver-${driver.id}`}>
+              <div className={`w-3 h-3 rounded-full ${getDriverColor(driver.id)}`} data-testid={`legend-color-${driver.id}`} />
+              <span className="text-xs text-muted-foreground" data-testid={`legend-name-${driver.id}`}>{driver.name.split(" ")[0]}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <Card className="p-4">
+        <div className="grid grid-cols-7 gap-1">
+          {DAY_NAMES.map((day) => (
+            <div key={day} className="text-center text-xs font-medium text-muted-foreground py-2">
+              {day}
+            </div>
+          ))}
+          {monthDays.map((day, index) => {
+            const dayRoutes = getRoutesForDate(day);
+            const isCurrentMonth = isSameMonth(day, calendarDate);
+            const isTodayDate = isToday(day);
+
+            return (
+              <div
+                key={index}
+                className={`min-h-[100px] p-2 rounded-lg border ${
+                  isCurrentMonth ? "bg-background" : "bg-muted/30"
+                } ${isTodayDate ? "ring-2 ring-primary" : ""}`}
+                data-testid={`calendar-day-${format(day, "yyyy-MM-dd")}`}
+              >
+                <div className={`text-sm font-medium mb-1 ${
+                  isCurrentMonth ? "text-foreground" : "text-muted-foreground"
+                }`}>
+                  {format(day, "d")}
+                </div>
+                <div className="space-y-1">
+                  {dayRoutes.length === 0 && isCurrentMonth && (
+                    <p className="text-xs text-muted-foreground italic">No routes</p>
+                  )}
+                  {dayRoutes.slice(0, 3).map((route) => (
+                    <div
+                      key={route.id}
+                      onClick={() => !route.driverId && onAssign(route)}
+                      className={`px-1.5 py-0.5 rounded text-xs text-white truncate ${getDriverColor(route.driverId || "")} ${!route.driverId ? "cursor-pointer hover-elevate" : ""}`}
+                      title={`${route.driverName || "Unassigned"} - ${route.stopCount} stops`}
+                      data-testid={`calendar-route-${route.id}`}
+                    >
+                      {route.driverName || "Unassigned"}
+                    </div>
+                  ))}
+                  {dayRoutes.length > 3 && (
+                    <Badge variant="secondary" className="text-xs">
+                      +{dayRoutes.length - 3} more
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    </div>
+  );
 }
 
 export default function AdminRoutesPage() {
-  const [showGenerateDialog, setShowGenerateDialog] = useState(false);
   const [showAssignDialog, setShowAssignDialog] = useState(false);
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
-  const [viewMode, setViewMode] = useState<"list" | "map">(() => {
+  const [viewMode, setViewMode] = useState<"list" | "map" | "calendar">(() => {
     const saved = localStorage.getItem("routes_viewMode");
-    return saved === "map" ? "map" : "list";
+    if (saved === "map") return "map";
+    if (saved === "calendar") return "calendar";
+    return "list";
   });
   const [selectedDay, setSelectedDay] = useState<string>(() => {
     return localStorage.getItem("routes_selectedDay") || "all";
@@ -44,9 +175,13 @@ export default function AdminRoutesPage() {
   const [selectedTab, setSelectedTab] = useState<string>(() => {
     return localStorage.getItem("routes_selectedTab") || "all";
   });
+  const [calendarDate, setCalendarDate] = useState(() => {
+    const saved = localStorage.getItem("routes_calendarDate");
+    return saved ? new Date(saved) : new Date();
+  });
 
   // Persist state to localStorage
-  const handleViewModeChange = (mode: "list" | "map") => {
+  const handleViewModeChange = (mode: "list" | "map" | "calendar") => {
     setViewMode(mode);
     localStorage.setItem("routes_viewMode", mode);
   };
@@ -57,6 +192,10 @@ export default function AdminRoutesPage() {
   const handleTabChange = (tab: string) => {
     setSelectedTab(tab);
     localStorage.setItem("routes_selectedTab", tab);
+  };
+  const handleCalendarDateChange = (date: Date) => {
+    setCalendarDate(date);
+    localStorage.setItem("routes_calendarDate", date.toISOString());
   };
 
   const [, navigate] = useLocation();
@@ -73,24 +212,6 @@ export default function AdminRoutesPage() {
 
   const { data: drivers = [] } = useQuery<User[]>({
     queryKey: ["/api/users"],
-  });
-
-  const generateRoutesMutation = useMutation({
-    mutationFn: async ({ driverCount, dayOfWeek, scheduledDate }: { driverCount: number; dayOfWeek: string; scheduledDate: string }) => {
-      return apiRequest<Route[]>("POST", "/api/routes/generate", { driverCount, dayOfWeek, scheduledDate });
-    },
-    onSuccess: () => {
-      setShowGenerateDialog(false);
-      queryClient.invalidateQueries({ queryKey: ["/api/routes"] });
-      toast({ title: "Routes generated successfully" });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Failed to generate routes",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
   });
 
   const assignDriverMutation = useMutation({
@@ -189,31 +310,29 @@ export default function AdminRoutesPage() {
       actions={
         <div className="flex items-center gap-2">
           <Button
-            onClick={() => setShowGenerateDialog(true)}
-            disabled={locations.length === 0}
-            data-testid="button-generate-routes"
+            variant={viewMode === "list" ? "default" : "outline"}
+            onClick={() => handleViewModeChange("list")}
+            data-testid="button-list-view"
           >
-            <Plus className="w-4 h-4 mr-2" />
-            Generate Routes
+            <Grid className="w-4 h-4 mr-2" />
+            List
           </Button>
-          <div className="flex items-center gap-1 border-l pl-2 ml-2">
-            <Button
-              variant={viewMode === "list" ? "default" : "outline"}
-              onClick={() => handleViewModeChange("list")}
-              data-testid="button-list-view"
-            >
-              <Grid className="w-4 h-4 mr-2" />
-              List View
-            </Button>
-            <Button
-              variant={viewMode === "map" ? "default" : "outline"}
-              onClick={() => handleViewModeChange("map")}
-              data-testid="button-map-view"
-            >
-              <Map className="w-4 h-4 mr-2" />
-              Map View
-            </Button>
-          </div>
+          <Button
+            variant={viewMode === "map" ? "default" : "outline"}
+            onClick={() => handleViewModeChange("map")}
+            data-testid="button-map-view"
+          >
+            <Map className="w-4 h-4 mr-2" />
+            Map
+          </Button>
+          <Button
+            variant={viewMode === "calendar" ? "default" : "outline"}
+            onClick={() => handleViewModeChange("calendar")}
+            data-testid="button-calendar-view"
+          >
+            <CalendarIcon className="w-4 h-4 mr-2" />
+            Calendar
+          </Button>
         </div>
       }
     >
@@ -236,15 +355,26 @@ export default function AdminRoutesPage() {
           <EmptyState
             icon={Map}
             title="No routes yet"
-            description="Generate optimized routes from your delivery stops."
+            description="Go to Confirm Route to generate optimized routes from your delivery stops."
             action={
-              <Button onClick={() => setShowGenerateDialog(true)} data-testid="button-generate-first-routes">
+              <Button onClick={() => navigate("/admin/confirm-route")} data-testid="button-go-to-confirm">
                 <Plus className="w-4 h-4 mr-2" />
-                Generate Routes
+                Go to Confirm Route
               </Button>
             }
           />
         )
+      ) : viewMode === "calendar" ? (
+        <CalendarView 
+          routes={routes} 
+          drivers={drivers.filter(u => u.role === "driver")}
+          calendarDate={calendarDate}
+          onDateChange={handleCalendarDateChange}
+          onAssign={(route) => {
+            setSelectedRoute(route);
+            setShowAssignDialog(true);
+          }}
+        />
       ) : viewMode === "map" ? (
         <RouteMapView routes={filteredRoutes} />
       ) : (
@@ -364,15 +494,6 @@ export default function AdminRoutesPage() {
           </Tabs>
         </div>
       )}
-
-      <GenerateRoutesDialog
-        open={showGenerateDialog}
-        onOpenChange={setShowGenerateDialog}
-        locationCount={locations.length}
-        onGenerate={(count, dayOfWeek, scheduledDate) => generateRoutesMutation.mutate({ driverCount: count, dayOfWeek, scheduledDate })}
-        defaultDay={selectedDay !== "all" ? selectedDay : undefined}
-        isLoading={generateRoutesMutation.isPending}
-      />
 
       <DriverAssignDialog
         open={showAssignDialog}

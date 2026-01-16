@@ -25,6 +25,7 @@ interface GenerateRoutesDialogProps {
   onGenerate: (driverCount: number, dayOfWeek: string, scheduledDate: string) => void;
   isLoading?: boolean;
   defaultDay?: string;
+  defaultDate?: string;
 }
 
 const DAY_VALUES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -36,6 +37,7 @@ export function GenerateRoutesDialog({
   onGenerate,
   isLoading,
   defaultDay,
+  defaultDate,
 }: GenerateRoutesDialogProps) {
   const [driverCount, setDriverCount] = useState<string>("2");
 
@@ -70,6 +72,14 @@ export function GenerateRoutesDialog({
   // Sync selected date when dialog opens or defaults change
   useEffect(() => {
     if (open && daysWithDates.length > 0) {
+      // If defaultDate is provided and exists in the list, use it
+      if (defaultDate) {
+        const matchingDate = daysWithDates.find(d => d.value === defaultDate);
+        if (matchingDate) {
+          setSelectedDate(matchingDate.value);
+          return;
+        }
+      }
       // If defaultDay is provided, find the next occurrence of that day
       if (defaultDay) {
         const matchingDay = daysWithDates.find(d => d.dayOfWeek === defaultDay);
@@ -80,7 +90,7 @@ export function GenerateRoutesDialog({
       }
       setSelectedDate(daysWithDates[0].value);
     }
-  }, [open, defaultDay, daysWithDates]);
+  }, [open, defaultDay, defaultDate, daysWithDates]);
 
   const handleGenerate = () => {
     const selectedOption = daysWithDates.find(d => d.value === selectedDate);
