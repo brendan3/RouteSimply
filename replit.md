@@ -21,6 +21,7 @@ UI preferences persist across navigation using localStorage:
 - **Routes Page**: View mode (list/map/calendar), day filter, status tab, calendar date
 - **Delivery Stops Page**: View mode (cards/list), day filter
 - **Calendar Page**: View mode (weekly/monthly), current date
+- **Admin Sidebar**: Nav item order (drag-and-drop reorderable), Team & Settings collapsed state
 
 ### Backend (Node.js + Express)
 - **API**: RESTful API with Express.js
