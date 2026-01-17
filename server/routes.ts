@@ -1018,11 +1018,14 @@ export async function registerRoutes(
       const { id } = req.params;
       const { driverId, driverName, driverColor } = req.body;
 
+      // If driverId is null/undefined, we're unassigning - set status back to draft
+      const newStatus = driverId ? "assigned" : "draft";
+
       const route = await storage.updateRoute(id, {
-        driverId,
-        driverName,
-        driverColor,
-        status: "assigned",
+        driverId: driverId || null,
+        driverName: driverName || null,
+        driverColor: driverColor || null,
+        status: newStatus,
       });
 
       return res.json(route);

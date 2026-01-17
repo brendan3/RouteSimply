@@ -5,6 +5,7 @@ import { AdminLayout } from "@/components/layout/admin-layout";
 import { RouteCard } from "@/components/routes/route-card";
 import { RouteMapView } from "@/components/routes/route-map-view";
 import { DriverAssignDialog } from "@/components/routes/driver-assign-dialog";
+import { DriverAssignmentView } from "@/components/routes/driver-assignment-view";
 import { EmptyState } from "@/components/common/empty-state";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 import { Button } from "@/components/ui/button";
@@ -20,7 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Map, Grid, CalendarIcon, Plus, MapPin, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { Map, Grid, CalendarIcon, Plus, MapPin, ChevronLeft, ChevronRight, ChevronDown, Users } from "lucide-react";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, isSameMonth, isToday, parseISO } from "date-fns";
 import type { Route, Location, User, RouteStop } from "@shared/schema";
 import { CustomerDetailDialog } from "@/components/customer/customer-detail-dialog";
@@ -172,10 +173,11 @@ export default function AdminRoutesPage() {
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
   const [selectedStop, setSelectedStop] = useState<RouteStop | null>(null);
   const [showCustomerDialog, setShowCustomerDialog] = useState(false);
-  const [viewMode, setViewMode] = useState<"list" | "map" | "calendar">(() => {
+  const [viewMode, setViewMode] = useState<"list" | "map" | "calendar" | "assign">(() => {
     const saved = localStorage.getItem("routes_viewMode");
     if (saved === "map") return "map";
     if (saved === "calendar") return "calendar";
+    if (saved === "assign") return "assign";
     return "list";
   });
   const [selectedDay, setSelectedDay] = useState<string>(() => {
@@ -190,7 +192,7 @@ export default function AdminRoutesPage() {
   });
 
   // Persist state to localStorage
-  const handleViewModeChange = (mode: "list" | "map" | "calendar") => {
+  const handleViewModeChange = (mode: "list" | "map" | "calendar" | "assign") => {
     setViewMode(mode);
     localStorage.setItem("routes_viewMode", mode);
   };
@@ -231,8 +233,8 @@ export default function AdminRoutesPage() {
       driverColor,
     }: {
       routeId: string;
-      driverId: string;
-      driverName: string;
+      driverId: string | null;
+      driverName: string | null;
       driverColor: string | null;
     }) => {
       return apiRequest<Route>("PATCH", `/api/routes/${routeId}/assign`, {
@@ -241,15 +243,15 @@ export default function AdminRoutesPage() {
         driverColor,
       });
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       setShowAssignDialog(false);
       setSelectedRoute(null);
       queryClient.invalidateQueries({ queryKey: ["/api/routes"] });
-      toast({ title: "Driver assigned successfully" });
+      toast({ title: variables.driverId ? "Driver assigned successfully" : "Route unassigned" });
     },
     onError: (error: Error) => {
       toast({
-        title: "Failed to assign driver",
+        title: "Failed to update route assignment",
         description: error.message,
         variant: "destructive",
       });
@@ -376,6 +378,14 @@ export default function AdminRoutesPage() {
             <CalendarIcon className="w-4 h-4 mr-2" />
             Calendar
           </Button>
+          <Button
+            variant={viewMode === "assign" ? "default" : "outline"}
+            onClick={() => handleViewModeChange("assign")}
+            data-testid="button-assign-view"
+          >
+            <Users className="w-4 h-4 mr-2" />
+            Assign
+          </Button>
         </div>
       }
     >
@@ -420,6 +430,23 @@ export default function AdminRoutesPage() {
         />
       ) : viewMode === "map" ? (
         <RouteMapView routes={filteredRoutes} />
+      ) : viewMode === "assign" ? (
+        <div className="h-[calc(100vh-200px)]">
+          <DriverAssignmentView
+            routes={routes}
+            drivers={drivers}
+            selectedDate={null}
+            onAssignRoute={(routeId, driverId, driverName, driverColor) => {
+              assignDriverMutation.mutate({ 
+                routeId, 
+                driverId, 
+                driverName, 
+                driverColor 
+              });
+            }}
+            isLoading={assignDriverMutation.isPending}
+          />
+        </div>
       ) : (
         <div className="space-y-6">
           {/* Day of Week Filter */}
