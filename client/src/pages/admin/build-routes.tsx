@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
@@ -43,6 +43,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useGoogleMaps } from "@/hooks/use-google-maps";
 import { apiRequest } from "@/lib/queryClient";
 import {
   MapPin,
@@ -55,6 +56,9 @@ import {
   Save,
   Package,
   ExternalLink,
+  LayoutGrid,
+  Map,
+  AlertCircle,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import type { Location, User as UserType, RouteStop, Route, RouteConfirmation } from "@shared/schema";
@@ -242,6 +246,227 @@ function DroppableRoute({ routeIndex, stops, onRemoveStop, color }: DroppableRou
   );
 }
 
+const BALTIMORE_CENTER = { lat: 39.2904, lng: -76.6122 };
+const UNASSIGNED_COLOR = "#9CA3AF";
+
+interface BuildRoutesMapViewProps {
+  routeStops: Location[][];
+  unassignedLocations: Location[];
+  colors: string[];
+}
+
+function BuildRoutesMapView({ routeStops, unassignedLocations, colors }: BuildRoutesMapViewProps) {
+  const { isLoaded, isLoading, error } = useGoogleMaps();
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const polylinesRef = useRef<google.maps.Polyline[]>([]);
+  const [mapError, setMapError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isLoaded || !mapRef.current || mapInstanceRef.current) return;
+
+    try {
+      mapInstanceRef.current = new google.maps.Map(mapRef.current, {
+        center: BALTIMORE_CENTER,
+        zoom: 11,
+        mapId: "build-routes-map",
+        disableDefaultUI: false,
+        zoomControl: true,
+        mapTypeControl: false,
+        streetViewControl: false,
+        fullscreenControl: true,
+        styles: [
+          {
+            featureType: "poi",
+            elementType: "labels",
+            stylers: [{ visibility: "off" }],
+          },
+        ],
+      });
+    } catch (err) {
+      console.error("Map initialization error:", err);
+      setMapError("Failed to initialize map");
+    }
+  }, [isLoaded]);
+
+  useEffect(() => {
+    if (!mapInstanceRef.current || !isLoaded) return;
+
+    markersRef.current.forEach((marker) => {
+      marker.map = null;
+    });
+    markersRef.current = [];
+
+    polylinesRef.current.forEach((polyline) => {
+      polyline.setMap(null);
+    });
+    polylinesRef.current = [];
+
+    const bounds = new google.maps.LatLngBounds();
+    let hasValidCoordinates = false;
+
+    unassignedLocations.forEach((location) => {
+      if (location.lat == null || location.lng == null) return;
+
+      const position = { lat: location.lat, lng: location.lng };
+      bounds.extend(position);
+      hasValidCoordinates = true;
+
+      const markerContent = document.createElement("div");
+      markerContent.style.cssText = `
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background-color: ${UNASSIGNED_COLOR};
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        font-weight: 600;
+        border: 2px solid white;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        cursor: pointer;
+        opacity: 0.6;
+      `;
+      markerContent.textContent = "?";
+      markerContent.title = location.customerName;
+
+      const marker = new google.maps.marker.AdvancedMarkerElement({
+        map: mapInstanceRef.current,
+        position,
+        content: markerContent,
+        title: location.customerName,
+        zIndex: 1,
+      });
+
+      markersRef.current.push(marker);
+    });
+
+    routeStops.forEach((stops, routeIndex) => {
+      const color = colors[routeIndex % colors.length];
+      const pathCoordinates: google.maps.LatLngLiteral[] = [];
+
+      stops.forEach((location, stopIndex) => {
+        if (location.lat == null || location.lng == null) return;
+
+        const position = { lat: location.lat, lng: location.lng };
+        pathCoordinates.push(position);
+        bounds.extend(position);
+        hasValidCoordinates = true;
+
+        const markerContent = document.createElement("div");
+        markerContent.style.cssText = `
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          background-color: ${color};
+          color: white;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+          font-weight: 600;
+          border: 2px solid white;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+          cursor: pointer;
+        `;
+        markerContent.textContent = String(stopIndex + 1);
+        markerContent.title = `Route ${routeIndex + 1} - Stop ${stopIndex + 1}: ${location.customerName}`;
+
+        const marker = new google.maps.marker.AdvancedMarkerElement({
+          map: mapInstanceRef.current,
+          position,
+          content: markerContent,
+          title: location.customerName,
+          zIndex: 100 + routeIndex,
+        });
+
+        markersRef.current.push(marker);
+      });
+
+      if (pathCoordinates.length >= 2) {
+        const polyline = new google.maps.Polyline({
+          path: pathCoordinates,
+          geodesic: true,
+          strokeColor: color,
+          strokeOpacity: 1,
+          strokeWeight: 4,
+          map: mapInstanceRef.current,
+          zIndex: routeIndex,
+        });
+        polylinesRef.current.push(polyline);
+      }
+    });
+
+    if (hasValidCoordinates) {
+      mapInstanceRef.current.fitBounds(bounds, 50);
+    } else {
+      mapInstanceRef.current.setCenter(BALTIMORE_CENTER);
+      mapInstanceRef.current.setZoom(11);
+    }
+  }, [routeStops, unassignedLocations, colors, isLoaded]);
+
+  if (error || mapError) {
+    return (
+      <Card className="h-full flex flex-col items-center justify-center gap-4 text-muted-foreground">
+        <AlertCircle className="w-12 h-12" />
+        <div className="text-center">
+          <p className="font-medium text-foreground">Failed to load map</p>
+          <p className="text-sm">{error || mapError}</p>
+        </div>
+      </Card>
+    );
+  }
+
+  if (isLoading || !isLoaded) {
+    return (
+      <Card className="h-full flex items-center justify-center">
+        <LoadingSpinner text="Loading map..." />
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="h-full overflow-hidden">
+      <div className="px-4 py-3 border-b flex items-center gap-4">
+        <MapPin className="w-4 h-4 text-primary" />
+        <span className="text-sm font-medium">Route Preview</span>
+        <div className="flex items-center gap-3 ml-auto">
+          {routeStops.map((stops, index) => (
+            <div key={index} className="flex items-center gap-1.5 text-xs">
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: colors[index % colors.length] }}
+              />
+              <span className="text-muted-foreground">
+                Route {index + 1} ({stops.length})
+              </span>
+            </div>
+          ))}
+          {unassignedLocations.length > 0 && (
+            <div className="flex items-center gap-1.5 text-xs">
+              <div
+                className="w-3 h-3 rounded-full"
+                style={{ backgroundColor: UNASSIGNED_COLOR }}
+              />
+              <span className="text-muted-foreground">
+                Unassigned ({unassignedLocations.length})
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+      <div
+        ref={mapRef}
+        className="h-[calc(100%-52px)] w-full"
+        data-testid="build-routes-map-container"
+      />
+    </Card>
+  );
+}
+
 export default function BuildRoutesPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -256,6 +481,7 @@ export default function BuildRoutesPage() {
   const [driverCount, setDriverCount] = useState(2);
   const [routeStops, setRouteStops] = useState<Location[][]>([[], []]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"cards" | "map">("cards");
 
   const { data: locations = [], isLoading: locationsLoading } = useQuery<Location[]>({
     queryKey: ["/api/locations"],
@@ -636,19 +862,62 @@ export default function BuildRoutesPage() {
               <span className="text-sm text-muted-foreground">
                 {assignedLocationIds.size} of {confirmedLocations.length} locations assigned
               </span>
+              <div className="flex items-center gap-1 ml-auto border rounded-lg p-1">
+                <Button
+                  variant={viewMode === "cards" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("cards")}
+                  data-testid="button-view-cards"
+                >
+                  <LayoutGrid className="w-4 h-4 mr-1" />
+                  Cards
+                </Button>
+                <Button
+                  variant={viewMode === "map" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("map")}
+                  data-testid="button-view-map"
+                >
+                  <Map className="w-4 h-4 mr-1" />
+                  Map
+                </Button>
+              </div>
             </div>
 
-            <div className="flex gap-4 overflow-x-auto pb-4 flex-1">
-              {routeStops.map((stops, index) => (
-                <DroppableRoute
-                  key={index}
-                  routeIndex={index}
-                  stops={stops}
-                  onRemoveStop={(locationId) => handleRemoveStop(index, locationId)}
-                  color={DRIVER_COLORS[index % DRIVER_COLORS.length]}
-                />
-              ))}
-            </div>
+            {viewMode === "cards" ? (
+              <div className="flex gap-4 overflow-x-auto pb-4 flex-1">
+                {routeStops.map((stops, index) => (
+                  <DroppableRoute
+                    key={index}
+                    routeIndex={index}
+                    stops={stops}
+                    onRemoveStop={(locationId) => handleRemoveStop(index, locationId)}
+                    color={DRIVER_COLORS[index % DRIVER_COLORS.length]}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex gap-4 flex-1">
+                <div className="flex gap-4 overflow-x-auto w-1/2 flex-shrink-0">
+                  {routeStops.map((stops, index) => (
+                    <DroppableRoute
+                      key={index}
+                      routeIndex={index}
+                      stops={stops}
+                      onRemoveStop={(locationId) => handleRemoveStop(index, locationId)}
+                      color={DRIVER_COLORS[index % DRIVER_COLORS.length]}
+                    />
+                  ))}
+                </div>
+                <div className="flex-1">
+                  <BuildRoutesMapView
+                    routeStops={routeStops}
+                    unassignedLocations={unassignedLocations}
+                    colors={DRIVER_COLORS}
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
