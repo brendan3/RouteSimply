@@ -21,7 +21,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { Map, Grid, CalendarIcon, Plus, MapPin, ChevronLeft, ChevronRight, ChevronDown, Users } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Map, Grid, CalendarIcon, Plus, MapPin, ChevronLeft, ChevronRight, ChevronDown, Users, Truck } from "lucide-react";
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, addMonths, subMonths, isSameMonth, isToday, parseISO } from "date-fns";
 import type { Route, Location, User, RouteStop } from "@shared/schema";
 import { CustomerDetailDialog } from "@/components/customer/customer-detail-dialog";
@@ -46,9 +52,10 @@ interface CalendarViewProps {
   calendarDate: Date;
   onDateChange: (date: Date) => void;
   onAssign: (route: Route) => void;
+  onRouteClick: (route: Route) => void;
 }
 
-function CalendarView({ routes, drivers, calendarDate, onDateChange, onAssign }: CalendarViewProps) {
+function CalendarView({ routes, drivers, calendarDate, onDateChange, onAssign, onRouteClick }: CalendarViewProps) {
   const monthStart = startOfMonth(calendarDate);
   const monthEnd = endOfMonth(calendarDate);
   const monthStartWeek = startOfWeek(monthStart, { weekStartsOn: 0 });
@@ -144,8 +151,8 @@ function CalendarView({ routes, drivers, calendarDate, onDateChange, onAssign }:
                   {dayRoutes.slice(0, 3).map((route) => (
                     <div
                       key={route.id}
-                      onClick={() => !route.driverId && onAssign(route)}
-                      className={`px-1.5 py-0.5 rounded text-xs text-white truncate ${!route.driverId ? "cursor-pointer hover-elevate" : ""}`}
+                      onClick={() => onRouteClick(route)}
+                      className="px-1.5 py-0.5 rounded text-xs text-white truncate cursor-pointer hover-elevate"
                       style={{ backgroundColor: route.driverId ? (route.driverColor || getDriverColor(route.driverId)) : UNASSIGNED_COLOR }}
                       title={`${route.driverName || "Unassigned"} - ${route.stopCount} stops`}
                       data-testid={`calendar-route-${route.id}`}
@@ -173,6 +180,7 @@ export default function AdminRoutesPage() {
   const [selectedRoute, setSelectedRoute] = useState<Route | null>(null);
   const [selectedStop, setSelectedStop] = useState<RouteStop | null>(null);
   const [showCustomerDialog, setShowCustomerDialog] = useState(false);
+  const [calendarSelectedRoute, setCalendarSelectedRoute] = useState<Route | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "map" | "calendar" | "assign">(() => {
     const saved = localStorage.getItem("routes_viewMode");
     if (saved === "map") return "map";
@@ -427,6 +435,7 @@ export default function AdminRoutesPage() {
             setSelectedRoute(route);
             setShowAssignDialog(true);
           }}
+          onRouteClick={(route) => setCalendarSelectedRoute(route)}
         />
       ) : viewMode === "map" ? (
         <RouteMapView routes={filteredRoutes} />
@@ -607,6 +616,92 @@ export default function AdminRoutesPage() {
         }
         isLoading={assignDriverMutation.isPending}
       />
+
+      {/* Calendar Route Details Dialog */}
+      <Dialog open={!!calendarSelectedRoute} onOpenChange={(open) => !open && setCalendarSelectedRoute(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Truck className="w-5 h-5 text-primary" />
+              {calendarSelectedRoute?.driverName || "Unassigned Route"}
+            </DialogTitle>
+          </DialogHeader>
+          {calendarSelectedRoute && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                <span>{calendarSelectedRoute.date ? format(new Date(calendarSelectedRoute.date), "EEEE, MMMM d, yyyy") : "No date"}</span>
+                <Badge variant="secondary">{calendarSelectedRoute.stopCount} stops</Badge>
+                <Badge variant={calendarSelectedRoute.status === "published" ? "default" : "outline"}>
+                  {calendarSelectedRoute.status}
+                </Badge>
+              </div>
+              <div className="flex gap-2">
+                {!calendarSelectedRoute.driverId && (
+                  <Button 
+                    size="sm" 
+                    onClick={() => {
+                      setSelectedRoute(calendarSelectedRoute);
+                      setShowAssignDialog(true);
+                      setCalendarSelectedRoute(null);
+                    }}
+                    data-testid="button-assign-from-detail"
+                  >
+                    Assign Driver
+                  </Button>
+                )}
+                {calendarSelectedRoute.routeLink && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => window.open(calendarSelectedRoute.routeLink || "", "_blank")}
+                    data-testid="button-open-google-maps"
+                  >
+                    <MapPin className="w-4 h-4 mr-1" />
+                    Open in Maps
+                  </Button>
+                )}
+              </div>
+              <div className="border-t pt-4">
+                <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <MapPin className="w-4 h-4" />
+                  Stops
+                </h3>
+                <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                  {calendarSelectedRoute.stopsJson && (calendarSelectedRoute.stopsJson as Array<{ locationId: string; customerName: string; address: string; serviceType?: string; notes?: string }>).map((stop, index) => (
+                    <Card key={stop.locationId || index} className="p-3">
+                      <div className="flex items-start gap-3">
+                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                          <span className="text-xs font-semibold text-primary">{index + 1}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <button
+                            className="text-sm font-medium text-primary hover:underline cursor-pointer text-left"
+                            onClick={() => {
+                              setSelectedStop({ 
+                                locationId: stop.locationId, 
+                                customerName: stop.customerName, 
+                                address: stop.address 
+                              } as RouteStop);
+                              setShowCustomerDialog(true);
+                            }}
+                            data-testid={`calendar-route-stop-${stop.locationId}`}
+                          >
+                            {stop.customerName}
+                          </button>
+                          <p className="text-xs text-muted-foreground truncate">{stop.address}</p>
+                          {stop.serviceType && (
+                            <Badge variant="outline" className="text-xs mt-1">{stop.serviceType}</Badge>
+                          )}
+                        </div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <CustomerDetailDialog
         open={showCustomerDialog}
