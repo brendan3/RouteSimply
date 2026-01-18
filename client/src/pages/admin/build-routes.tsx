@@ -261,6 +261,7 @@ function BuildRoutesMapView({ routeStops, unassignedLocations, colors }: BuildRo
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   const polylinesRef = useRef<google.maps.Polyline[]>([]);
+  const directionsServiceRef = useRef<google.maps.DirectionsService | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -284,6 +285,7 @@ function BuildRoutesMapView({ routeStops, unassignedLocations, colors }: BuildRo
           },
         ],
       });
+      directionsServiceRef.current = new google.maps.DirectionsService();
     } catch (err) {
       console.error("Map initialization error:", err);
       setMapError("Failed to initialize map");
@@ -346,13 +348,10 @@ function BuildRoutesMapView({ routeStops, unassignedLocations, colors }: BuildRo
 
     routeStops.forEach((stops, routeIndex) => {
       const color = colors[routeIndex % colors.length];
-      const pathCoordinates: google.maps.LatLngLiteral[] = [];
+      const validStops = stops.filter(l => l.lat != null && l.lng != null);
 
-      stops.forEach((location, stopIndex) => {
-        if (location.lat == null || location.lng == null) return;
-
-        const position = { lat: location.lat, lng: location.lng };
-        pathCoordinates.push(position);
+      validStops.forEach((location, stopIndex) => {
+        const position = { lat: location.lat!, lng: location.lng! };
         bounds.extend(position);
         hasValidCoordinates = true;
 
@@ -386,17 +385,52 @@ function BuildRoutesMapView({ routeStops, unassignedLocations, colors }: BuildRo
         markersRef.current.push(marker);
       });
 
-      if (pathCoordinates.length >= 2) {
-        const polyline = new google.maps.Polyline({
-          path: pathCoordinates,
-          geodesic: true,
-          strokeColor: color,
-          strokeOpacity: 1,
-          strokeWeight: 4,
-          map: mapInstanceRef.current,
-          zIndex: routeIndex,
-        });
-        polylinesRef.current.push(polyline);
+      if (validStops.length >= 2 && directionsServiceRef.current) {
+        const origin = { lat: validStops[0].lat!, lng: validStops[0].lng! };
+        const destination = { lat: validStops[validStops.length - 1].lat!, lng: validStops[validStops.length - 1].lng! };
+        const waypoints = validStops.slice(1, -1).map(stop => ({
+          location: { lat: stop.lat!, lng: stop.lng! },
+          stopover: true,
+        }));
+
+        directionsServiceRef.current.route(
+          {
+            origin,
+            destination,
+            waypoints,
+            travelMode: google.maps.TravelMode.DRIVING,
+            optimizeWaypoints: false,
+          },
+          (result, status) => {
+            if (status === google.maps.DirectionsStatus.OK && result) {
+              const routePath = result.routes[0].overview_path;
+              const polyline = new google.maps.Polyline({
+                path: routePath,
+                geodesic: true,
+                strokeColor: color,
+                strokeOpacity: 0.9,
+                strokeWeight: 5,
+                map: mapInstanceRef.current,
+                zIndex: routeIndex,
+              });
+              polylinesRef.current.push(polyline);
+            } else {
+              const pathCoordinates = validStops.map(l => ({ lat: l.lat!, lng: l.lng! }));
+              const polyline = new google.maps.Polyline({
+                path: pathCoordinates,
+                geodesic: true,
+                strokeColor: color,
+                strokeOpacity: 0.7,
+                strokeWeight: 4,
+                strokeDashArray: [10, 5],
+                map: mapInstanceRef.current,
+                zIndex: routeIndex,
+              } as google.maps.PolylineOptions);
+              polylinesRef.current.push(polyline);
+            }
+          }
+        );
+      } else if (validStops.length === 1) {
       }
     });
 
