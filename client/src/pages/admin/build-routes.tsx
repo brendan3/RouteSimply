@@ -54,6 +54,7 @@ import {
   ArrowLeft,
   Save,
   Package,
+  ExternalLink,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import type { Location, User as UserType, RouteStop, Route, RouteConfirmation } from "@shared/schema";
@@ -145,17 +146,24 @@ function SortableRouteStop({ location }: SortableRouteStopProps) {
 }
 
 interface DroppableRouteProps {
-  driverIndex: number;
-  driver: UserType | null;
+  routeIndex: number;
   stops: Location[];
   onRemoveStop: (locationId: string) => void;
   color: string;
 }
 
-function DroppableRoute({ driverIndex, driver, stops, onRemoveStop, color }: DroppableRouteProps) {
+function DroppableRoute({ routeIndex, stops, onRemoveStop, color }: DroppableRouteProps) {
   const { setNodeRef, isOver } = useDroppable({
-    id: `route-${driverIndex}`,
+    id: `route-${routeIndex}`,
   });
+
+  const generateMapsUrl = () => {
+    if (stops.length === 0) return null;
+    const addresses = stops.map(s => encodeURIComponent(s.address));
+    return `https://www.google.com/maps/dir/${addresses.join("/")}`;
+  };
+
+  const mapsUrl = generateMapsUrl();
 
   return (
     <Card
@@ -164,7 +172,7 @@ function DroppableRoute({ driverIndex, driver, stops, onRemoveStop, color }: Dro
         "flex-1 min-w-[280px] max-w-[400px] transition-all",
         isOver && "ring-2 ring-primary bg-primary/5"
       )}
-      data-testid={`route-dropzone-${driverIndex}`}
+      data-testid={`route-dropzone-${routeIndex}`}
     >
       <CardHeader className="pb-2">
         <div className="flex items-center gap-2">
@@ -173,12 +181,24 @@ function DroppableRoute({ driverIndex, driver, stops, onRemoveStop, color }: Dro
             style={{ backgroundColor: color }}
           />
           <CardTitle className="text-base">
-            {driver ? driver.name : `Driver ${driverIndex + 1}`}
+            Route {routeIndex + 1}
           </CardTitle>
           <Badge variant="secondary" className="ml-auto">
             {stops.length} stops
           </Badge>
         </div>
+        {mapsUrl && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2 w-full"
+            onClick={() => window.open(mapsUrl, "_blank")}
+            data-testid={`button-view-map-${routeIndex}`}
+          >
+            <ExternalLink className="w-4 h-4 mr-2" />
+            View on Google Maps
+          </Button>
+        )}
       </CardHeader>
       <CardContent className="p-2">
         <ScrollArea className="h-[400px]">
@@ -622,11 +642,10 @@ export default function BuildRoutesPage() {
               {routeStops.map((stops, index) => (
                 <DroppableRoute
                   key={index}
-                  driverIndex={index}
-                  driver={availableDrivers[index] || null}
+                  routeIndex={index}
                   stops={stops}
                   onRemoveStop={(locationId) => handleRemoveStop(index, locationId)}
-                  color={availableDrivers[index]?.color || DRIVER_COLORS[index % DRIVER_COLORS.length]}
+                  color={DRIVER_COLORS[index % DRIVER_COLORS.length]}
                 />
               ))}
             </div>
