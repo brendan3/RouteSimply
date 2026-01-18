@@ -4,15 +4,20 @@ import { useLocation } from "wouter";
 import {
   DndContext,
   DragOverlay,
-  closestCenter,
+  pointerWithin,
+  rectIntersection,
   KeyboardSensor,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   DragStartEvent,
   DragEndEvent,
   DragOverEvent,
   useDroppable,
+  useDraggable,
+  MeasuringStrategy,
+  CollisionDetection,
 } from "@dnd-kit/core";
 import {
   arrayMove,
@@ -61,10 +66,48 @@ const DRIVER_COLORS = [
 
 interface DraggableLocationProps {
   location: Location;
-  isInRoute?: boolean;
 }
 
-function DraggableLocation({ location, isInRoute }: DraggableLocationProps) {
+function UnassignedDraggableLocation({ location }: DraggableLocationProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    isDragging,
+  } = useDraggable({ id: location.id });
+
+  const style = {
+    transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={cn(
+        "flex items-center gap-2 p-3 rounded-lg bg-background border cursor-grab active:cursor-grabbing hover:bg-muted/50",
+        isDragging && "ring-2 ring-primary"
+      )}
+      data-testid={`draggable-location-${location.id}`}
+    >
+      <GripVertical className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+      <div className="flex-1 min-w-0">
+        <p className="font-medium text-sm truncate">{location.customerName}</p>
+        <p className="text-xs text-muted-foreground truncate">{location.address}</p>
+      </div>
+    </div>
+  );
+}
+
+interface SortableRouteStopProps {
+  location: Location;
+}
+
+function SortableRouteStop({ location }: SortableRouteStopProps) {
   const {
     attributes,
     listeners,
@@ -90,7 +133,7 @@ function DraggableLocation({ location, isInRoute }: DraggableLocationProps) {
         "flex items-center gap-2 p-3 rounded-lg bg-background border cursor-grab active:cursor-grabbing hover:bg-muted/50",
         isDragging && "ring-2 ring-primary"
       )}
-      data-testid={`draggable-location-${location.id}`}
+      data-testid={`sortable-stop-${location.id}`}
     >
       <GripVertical className="w-4 h-4 text-muted-foreground flex-shrink-0" />
       <div className="flex-1 min-w-0">
@@ -158,7 +201,7 @@ function DroppableRoute({ driverIndex, driver, stops, onRemoveStop, color }: Dro
                     <Badge variant="outline" className="w-6 h-6 p-0 flex items-center justify-center flex-shrink-0">
                       {index + 1}
                     </Badge>
-                    <DraggableLocation location={location} isInRoute />
+                    <SortableRouteStop location={location} />
                     <Button
                       variant="ghost"
                       size="icon"
@@ -252,13 +295,41 @@ export default function BuildRoutesPage() {
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8,
+        distance: 5,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 150,
+        tolerance: 5,
       },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     })
   );
+
+  const measuringConfig = {
+    droppable: {
+      strategy: MeasuringStrategy.Always,
+    },
+  };
+
+  const customCollisionDetection: CollisionDetection = (args) => {
+    const pointerCollisions = pointerWithin(args);
+    const filteredPointerCollisions = pointerCollisions.filter(
+      collision => collision.id !== args.active.id
+    );
+    if (filteredPointerCollisions.length > 0) {
+      return filteredPointerCollisions;
+    }
+    
+    const rectCollisions = rectIntersection(args);
+    const filteredRectCollisions = rectCollisions.filter(
+      collision => collision.id !== args.active.id
+    );
+    return filteredRectCollisions;
+  };
 
   useEffect(() => {
     setRouteStops(prev => {
@@ -273,6 +344,51 @@ export default function BuildRoutesPage() {
     setActiveId(event.active.id as string);
   };
 
+  const handleDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    
+    if (!over) return;
+    
+    const activeId = active.id as string;
+    const overId = over.id as string;
+    
+    if (!overId.startsWith("route-")) return;
+    
+    const targetRouteIndex = parseInt(overId.replace("route-", ""));
+    const location = confirmedLocations.find(l => l.id === activeId);
+    
+    if (!location) return;
+
+    let sourceRouteIndex = -1;
+    routeStops.forEach((stops, index) => {
+      if (stops.some(s => s.id === activeId)) {
+        sourceRouteIndex = index;
+      }
+    });
+
+    if (sourceRouteIndex === targetRouteIndex) return;
+    
+    if (routeStops[targetRouteIndex]?.some(s => s.id === activeId)) return;
+
+    if (sourceRouteIndex === -1) return;
+
+    setRouteStops(prev => {
+      if (prev[targetRouteIndex]?.some(s => s.id === activeId)) {
+        return prev;
+      }
+      
+      const newRouteStops = prev.map(stops => [...stops]);
+      
+      newRouteStops[sourceRouteIndex] = newRouteStops[sourceRouteIndex].filter(
+        s => s.id !== activeId
+      );
+      
+      newRouteStops[targetRouteIndex].push(location);
+      
+      return newRouteStops;
+    });
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     setActiveId(null);
@@ -282,37 +398,46 @@ export default function BuildRoutesPage() {
     const activeId = active.id as string;
     const overId = over.id as string;
 
+    const location = confirmedLocations.find(l => l.id === activeId);
+    if (!location) return;
+
+    let sourceRouteIndex = -1;
+    routeStops.forEach((stops, index) => {
+      if (stops.some(s => s.id === activeId)) {
+        sourceRouteIndex = index;
+      }
+    });
+
+    let targetRouteIndex = -1;
+    
     if (overId.startsWith("route-")) {
-      const targetRouteIndex = parseInt(overId.replace("route-", ""));
-      const location = confirmedLocations.find(l => l.id === activeId);
-      
-      if (!location) return;
-
-      let sourceRouteIndex = -1;
+      targetRouteIndex = parseInt(overId.replace("route-", ""));
+    } else {
       routeStops.forEach((stops, index) => {
-        if (stops.some(s => s.id === activeId)) {
-          sourceRouteIndex = index;
+        if (stops.some(s => s.id === overId)) {
+          targetRouteIndex = index;
         }
-      });
-
-      if (sourceRouteIndex === targetRouteIndex) return;
-
-      setRouteStops(prev => {
-        const newRouteStops = prev.map(stops => [...stops]);
-        
-        if (sourceRouteIndex >= 0) {
-          newRouteStops[sourceRouteIndex] = newRouteStops[sourceRouteIndex].filter(
-            s => s.id !== activeId
-          );
-        }
-        
-        if (!newRouteStops[targetRouteIndex].some(s => s.id === activeId)) {
-          newRouteStops[targetRouteIndex].push(location);
-        }
-        
-        return newRouteStops;
       });
     }
+
+    if (targetRouteIndex === -1) return;
+    if (sourceRouteIndex === targetRouteIndex) return;
+
+    setRouteStops(prev => {
+      const newRouteStops = prev.map(stops => [...stops]);
+      
+      if (sourceRouteIndex >= 0) {
+        newRouteStops[sourceRouteIndex] = newRouteStops[sourceRouteIndex].filter(
+          s => s.id !== activeId
+        );
+      }
+      
+      if (!newRouteStops[targetRouteIndex].some(s => s.id === activeId)) {
+        newRouteStops[targetRouteIndex].push(location);
+      }
+      
+      return newRouteStops;
+    });
   };
 
   const handleRemoveStop = (routeIndex: number, locationId: string) => {
@@ -428,8 +553,10 @@ export default function BuildRoutesPage() {
     >
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={customCollisionDetection}
+        measuring={measuringConfig}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
         <div className="flex gap-6 h-[calc(100vh-200px)]">
@@ -452,23 +579,18 @@ export default function BuildRoutesPage() {
                 />
               </div>
               <ScrollArea className="h-[calc(100%-48px)]">
-                <SortableContext
-                  items={filteredUnassigned.map(l => l.id)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="space-y-2 p-2">
-                    {filteredUnassigned.map(location => (
-                      <DraggableLocation key={location.id} location={location} />
-                    ))}
-                    {filteredUnassigned.length === 0 && (
-                      <div className="text-center py-8 text-muted-foreground text-sm">
-                        {unassignedLocations.length === 0
-                          ? "All locations assigned"
-                          : "No matches found"}
-                      </div>
-                    )}
-                  </div>
-                </SortableContext>
+                <div className="space-y-2 p-2">
+                  {filteredUnassigned.map(location => (
+                    <UnassignedDraggableLocation key={location.id} location={location} />
+                  ))}
+                  {filteredUnassigned.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground text-sm">
+                      {unassignedLocations.length === 0
+                        ? "All locations assigned"
+                        : "No matches found"}
+                    </div>
+                  )}
+                </div>
               </ScrollArea>
             </CardContent>
           </Card>
