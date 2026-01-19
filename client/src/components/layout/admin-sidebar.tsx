@@ -149,8 +149,8 @@ export function AdminSidebar() {
   };
 
   return (
-    <aside className="w-[280px] h-screen bg-sidebar border-r border-sidebar-border flex flex-col">
-      <div className="p-6 border-b border-sidebar-border">
+    <aside className="w-[280px] h-screen bg-white/70 dark:bg-white/5 backdrop-blur-xl border-r border-white/30 dark:border-white/10 flex flex-col">
+      <div className="p-6 border-b border-white/20 dark:border-white/10">
         <h1 className="text-xl font-bold text-sidebar-foreground tracking-tight">
           Grizzly Mats
         </h1>
@@ -182,7 +182,7 @@ export function AdminSidebar() {
           </SortableContext>
         </DndContext>
 
-        <div className="mt-2 pt-2 border-t border-sidebar-border">
+        <div className="mt-2 pt-2 border-t border-white/20 dark:border-white/10">
           <button
             onClick={toggleSettings}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-[15px] font-medium text-sidebar-foreground hover-elevate"
@@ -218,7 +218,7 @@ export function AdminSidebar() {
         </div>
       </nav>
 
-      <div className="p-4 border-t border-sidebar-border">
+      <div className="p-4 border-t border-white/20 dark:border-white/10">
         <div className="flex items-center gap-3 px-4 py-3 mb-2">
           <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center">
             <span className="text-sm font-semibold text-primary">

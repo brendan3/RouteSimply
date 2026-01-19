@@ -69,11 +69,15 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
-      <Card className="w-full max-w-md p-8">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 flex items-center justify-center p-4 relative overflow-hidden">
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/20 rounded-full blur-3xl" />
+        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-[hsl(186,80%,45%)]/15 rounded-full blur-3xl" />
+      </div>
+      <Card className="w-full max-w-md p-8 relative z-10 shadow-xl">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
-            <Truck className="w-8 h-8 text-primary" />
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-[hsl(186,80%,45%)] flex items-center justify-center mx-auto mb-4 shadow-lg">
+            <Truck className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-2xl font-bold text-foreground tracking-tight">
             Grizzly Mats

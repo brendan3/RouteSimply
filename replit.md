@@ -1,7 +1,7 @@
 # Grizzly Mats Driver Management App
 
 ## Overview
-A mobile-optimized web application for managing mat delivery driver schedules, GPS-verified time tracking, and route optimization. Built with an Apple-inspired design aesthetic.
+A mobile-optimized web application for managing mat delivery driver schedules, GPS-verified time tracking, and route optimization. Built with a Light Glass UI (glassmorphism) design aesthetic featuring frosted glass effects, purple/cyan gradient accents, and premium visual styling.
 
 ## Demo Credentials
 - **Admin**: username: `admin`, password: `admin123`
@@ -11,10 +11,11 @@ A mobile-optimized web application for managing mat delivery driver schedules, G
 
 ### Frontend (React + TypeScript)
 - **Framework**: React with Vite
-- **Styling**: Tailwind CSS with Apple-inspired design system
+- **Styling**: Tailwind CSS with Light Glass UI design system
+- **Design System**: Glassmorphism with frosted effects, purple/cyan gradients, and backdrop blur
 - **State Management**: TanStack Query for server state, localStorage for UI preferences
 - **Routing**: Wouter
-- **UI Components**: Custom components with Shadcn/UI primitives
+- **UI Components**: Custom components with Shadcn/UI primitives (glass-styled)
 
 ### State Persistence
 UI preferences persist across navigation using localStorage:

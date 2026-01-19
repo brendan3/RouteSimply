@@ -2,249 +2,266 @@
 
 ## Design Approach
 
-**Selected Framework**: Apple Human Interface Guidelines (iOS/iPadOS)
-**Rationale**: The user explicitly requested "Apple-inspired design" for a mobile-optimized utility application. Apple's HIG emphasizes clarity, deference, and depth - perfect for a functional driver management tool that prioritizes usability and reliability.
+**Selected Framework**: Light Glass UI (Glassmorphism)
+**Rationale**: A modern, premium aesthetic featuring frosted transparency, subtle blur effects, and luminous overlays. This creates depth and elegance while maintaining excellent usability for a professional driver management application.
 
 **Core Principles**:
-- Clarity: Content fills the screen with generous whitespace and legible typography
-- Deference: UI elements defer to content, minimal chrome
-- Depth: Subtle layers and motion provide hierarchy without distraction
+- **Layered Depth**: Transparent surfaces with backdrop blur create visual hierarchy
+- **Luminous Accents**: Purple-to-cyan gradients provide energetic, modern highlights
+- **Ethereal Elegance**: Soft glows and subtle animations enhance the premium feel
+- **Light Foundation**: Clean, bright backgrounds ensure readability and professionalism
+
+---
+
+## Color System
+
+### Primary Palette
+
+**Background Colors**:
+- `--background`: Light lavender-tinted white (hsl 240 20% 98%)
+- `--card`: Pure white with glass effect
+- `--sidebar`: Soft frosted panel (hsl 240 20% 97%)
+
+**Accent Gradient Spectrum**:
+- **Primary Purple**: hsl(262, 83%, 58%) - #8b5cf6
+- **Accent Cyan**: hsl(186, 80%, 45%) - #06b6d4
+- **Accent Pink**: hsl(330, 80%, 60%) - #ec4899
+- **Accent Blue**: hsl(220, 80%, 55%) - #3b82f6
+
+**Text Colors**:
+- **Primary Text**: hsl(240, 10%, 10%) - Near black with blue undertone
+- **Secondary Text**: hsl(240, 5%, 45%) - Muted gray
+- **On Primary**: Pure white
+
+### Glass Effects
+
+```css
+/* Standard glass surface */
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+/* Strong glass (cards, modals) */
+.glass-strong {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+}
+```
+
+### Gradient Utilities
+
+- **gradient-primary**: Purple to blue (135deg)
+- **gradient-accent**: Purple to cyan (135deg)
+- **gradient-hero**: Subtle purple/cyan/pink overlay for hero sections
+- **text-gradient**: Purple to cyan gradient text for emphasis
 
 ---
 
 ## Typography System
 
-**Font Family**: System font stack (`-apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif`)
+**Font Family**: Inter, -apple-system, BlinkMacSystemFont, SF Pro Display
 
 **Hierarchy**:
 - **Page Headers**: 32px/2rem, weight 700, tracking -0.02em
-- **Section Headers**: 24px/1.5rem, weight 600, tracking -0.01em  
+- **Section Headers**: 24px/1.5rem, weight 600
 - **Card Titles**: 20px/1.25rem, weight 600
-- **Body Large**: 17px/1.0625rem, weight 400 (primary interface text)
-- **Body**: 15px/0.9375rem, weight 400 (secondary information)
-- **Caption**: 13px/0.8125rem, weight 400, 85% opacity (metadata, timestamps)
-- **Button Text**: 17px/1.0625rem, weight 600
+- **Body Large**: 17px/1.0625rem, weight 400
+- **Body**: 15px/0.9375rem, weight 400
+- **Caption**: 13px/0.8125rem, weight 400, muted-foreground
 
-**Line Height**: 1.5 for body text, 1.2 for headings
+**Gradient Text**:
+Use `.text-gradient` class for important headings or CTAs to add visual emphasis.
 
 ---
 
 ## Layout & Spacing System
 
-**Spacing Scale**: Tailwind units of **2, 4, 6, 8, 12, 16, 24** (p-2, p-4, p-6, p-8, p-12, p-16, p-24)
+**Spacing Scale**: 2, 4, 6, 8, 12, 16, 24 (Tailwind units)
 
-**Mobile Layout (Driver View)**:
-- Full-width interface with safe area insets
-- Padding: px-4 (16px horizontal) for main content
-- Card spacing: gap-4 between elements
-- Bottom navigation/action bar: pb-8 for safe area
+**Container Padding**:
+- Mobile: px-4 (16px horizontal)
+- Desktop: px-6 (24px horizontal)
+- Cards: p-6 internal padding
 
-**Desktop Layout (Admin Dashboard)**:
-- Max-width container: max-w-7xl mx-auto
-- Sidebar width: 280px fixed
-- Main content area: px-6 py-8
-- Card grid spacing: gap-6
-
-**Touch Targets**:
-- Minimum height: 48px (h-12) for all interactive elements
-- Primary action buttons: 56px (h-14) minimum on mobile
-- Spacing between touch targets: minimum 8px
+**Border Radius**:
+- Small elements: rounded-md (8px)
+- Cards/Buttons: rounded-lg (12px)
+- Large containers: rounded-xl (16px)
+- Extra large: rounded-2xl (20px)
 
 ---
 
 ## Component Library
 
-### Navigation
-
-**Mobile Driver Navigation**:
-- Fixed bottom tab bar with 2-3 items (Schedule, Time Clock, Profile)
-- Height: 72px with safe area padding
-- Icons: 24px with 10px label below
-- Active state: full opacity, inactive: 60% opacity
-
-**Admin Dashboard Navigation**:
-- Fixed left sidebar: 280px wide, full height
-- Logo/company name at top (py-6)
-- Navigation items: py-3 px-4, rounded-lg on hover
-- Section dividers with 12px vertical spacing
-
 ### Buttons
 
-**Primary Button (CTA)**:
-- Height: 56px on mobile, 48px on desktop
-- Border radius: 12px (rounded-xl)
-- Font weight: 600
-- Full-width on mobile, min-width 200px on desktop
-- Shadow: subtle elevation (shadow-sm)
+**Primary Button**:
+- Background: gradient-primary (purple to blue)
+- Text: white
+- Border radius: rounded-lg (12px)
+- Shadow: subtle purple glow on hover
+- Height: min-h-9 (default), min-h-10 (lg)
 
 **Secondary Button**:
-- Same size as primary
-- Border: 1.5px solid with 50% opacity
+- Background: glass effect
+- Border: subtle white/transparent
+- Backdrop blur for glass effect
+
+**Ghost Button**:
 - Transparent background
-- Border radius: 12px
+- Hover: subtle purple tint elevation
 
-**Clock In/Out Buttons** (Mobile):
-- Extra large: 64px height (h-16)
-- Full width with 16px horizontal padding
-- Border radius: 16px (rounded-2xl)
-- Icon + text combination (icon on left, 24px size)
-- Haptic feedback on press (visual: scale-95 on active)
+**Icon Button**:
+- Size: 36x36px (size="icon")
+- Use for toolbar actions, close buttons
 
-**Icon Buttons**:
-- Size: 40px × 40px
-- Border radius: 10px (rounded-lg)
-- Icon size: 20px
+### Cards
 
-### Cards & Containers
+**Standard Card**:
+- Background: white with glass-strong effect
+- Border: 1px solid card-border (subtle)
+- Border radius: rounded-xl (16px)
+- Shadow: subtle purple-tinted shadow
+- Backdrop blur for glass effect
 
-**Route Cards (Admin Dashboard)**:
-- Background: white with 1px border
-- Border radius: 16px (rounded-2xl)
-- Padding: p-6
-- Shadow: shadow-sm with subtle border
-- Header with drag handle icon (24px, left-aligned)
+**Hover State**:
+- Subtle lift animation
+- Enhanced shadow with glow
 
-**Schedule List Items (Driver Mobile)**:
-- Background: white
-- Padding: p-4
-- Border radius: 12px (rounded-xl)
-- Stop number badge: 32px circle, positioned left
-- Divider between items: 1px line with 12px vertical margin
+### Sidebar
 
-**Status Cards**:
-- Compact height: py-4 px-5
-- Border radius: 12px
-- Border left accent: 4px width for status indication
-- Icon + text horizontal layout
+**Glass Sidebar**:
+- Background: frosted panel with backdrop blur
+- Border right: subtle separator
+- Active item: purple accent background with left border highlight
 
-### Forms & Inputs
+**Menu Items**:
+- Height: 40px
+- Hover: subtle accent background
+- Active: stronger accent with left border indicator
 
-**Text Input Fields**:
-- Height: 48px
-- Border: 1.5px solid, 30% opacity
-- Border radius: 10px (rounded-lg)
-- Padding: px-4
-- Focus state: border opacity 100%, subtle shadow
-- Label above input: text-sm, mb-2
+### Form Inputs
 
-**File Upload (CSV)**:
-- Drag-and-drop zone: min-height 200px
-- Dashed border: 2px, border-dashed
-- Border radius: 12px
-- Upload icon: 48px, centered
-- Helper text below icon
+**Text Input**:
+- Background: glass subtle effect
+- Border: 1px solid input border
+- Border radius: rounded-lg (12px)
+- Focus: purple ring with glow
+- Height: h-9 (36px)
 
 **Select/Dropdown**:
-- Same specs as text input
-- Chevron icon right-aligned (16px)
-- Dropdown menu: rounded-xl, shadow-lg, py-2
+- Same glass styling as inputs
+- Dropdown menu: glass-strong with shadow
 
-### Data Display
+### Badges
 
-**Route Overview Grid (Admin)**:
-- 2-column layout on tablet (md:grid-cols-2)
-- 3-column on desktop (lg:grid-cols-3)
-- Gap: gap-6
-- Each card shows: driver name, stop count, distance, estimated time
+**Default Badge**:
+- Background: gradient-primary
+- Text: white
+- Border radius: rounded-md
 
-**Schedule List (Driver Mobile)**:
-- Sequential numbered stops (1, 2, 3...)
-- Address in body-large weight
-- Customer name and service type in caption
-- Chevron icon on right (16px)
+**Secondary Badge**:
+- Background: secondary (muted)
+- Text: secondary-foreground
 
-**Time Entry Display**:
-- Two-column grid for clock in/out info
-- Timestamp: body weight
-- Location name: caption
-- GPS coordinates: caption, 70% opacity
+**Outline Badge**:
+- Transparent with subtle border
+- Glass effect background
 
-### Maps & Geographic Elements
+---
 
-**Map Preview (Admin Dashboard)**:
-- Aspect ratio: 16:9
-- Border radius: 12px
-- Embedded within route card at top
-- Controls: minimal, positioned top-right
+## Shadow & Glow System
 
-**"Open in Google Maps" Button (Mobile)**:
-- Prominent positioning: top of schedule view
-- Icon: maps pin (20px) + external link indicator
-- Background: slight tint for elevation
-- Sticky position when scrolling (optional enhancement)
+**Base Shadows** (purple-tinted):
+- shadow-sm: 0 2px 8px rgba(139, 92, 246, 0.08)
+- shadow: 0 4px 12px rgba(139, 92, 246, 0.1)
+- shadow-md: 0 6px 20px rgba(139, 92, 246, 0.12)
+- shadow-lg: 0 8px 30px rgba(139, 92, 246, 0.15)
 
-### Drag & Drop Interface (Admin)
+**Glow Effects**:
+- glow-sm: 0 0 15px purple accent
+- glow-md: 0 0 25px purple accent
+- glow-lg: 0 0 40px purple accent
 
-**Draggable Route Stop**:
-- Drag handle: 6 horizontal lines icon, 20px, left-most
-- Dragging state: lifted elevation (shadow-lg), 98% opacity
-- Drop zone indicator: 2px dashed border, subtle highlight
-- Smooth transitions: 150ms ease-out
+**Hover Glow**:
+Apply `.hover-glow` class for interactive elements that should glow on hover.
+
+---
+
+## Animation System
+
+**Transition Defaults**:
+- Duration: 200-300ms
+- Easing: ease-out
+
+**Available Animations**:
+- `animate-fade-in`: Fade in with subtle upward movement
+- `animate-slide-in-right`: Slide in from right
+- `animate-scale-in`: Scale up from 95%
+- `animate-float`: Gentle floating motion
+- `animate-pulse-glow`: Pulsing glow effect
+- `animate-shimmer`: Loading shimmer effect
+
+**Interaction States**:
+- Hover: Use elevation system (hover-elevate)
+- Active: Scale 98% with enhanced elevation
+- Focus: Purple ring with offset
 
 ---
 
 ## Responsive Breakpoints
 
-- **Mobile**: < 768px (base, primary driver interface)
+- **Mobile**: < 768px (base)
 - **Tablet**: 768px - 1024px (md:)
-- **Desktop**: > 1024px (lg:, admin dashboard optimal)
+- **Desktop**: > 1024px (lg:)
 
-**Mobile-First Considerations**:
-- Single column layouts stack vertically
+**Mobile Considerations**:
+- Touch targets: minimum 48px height
+- Full-width buttons on mobile
 - Bottom navigation for drivers
-- Collapsible sections for space efficiency
-- Large touch targets throughout
-
----
-
-## Interaction States
-
-**Button States**:
-- Default: full opacity, subtle shadow
-- Hover (desktop): 5% darker, shadow-md
-- Active/Pressed: scale-95 transform, shadow-sm
-- Disabled: 40% opacity, no shadow, cursor-not-allowed
-
-**Card Hover (desktop)**:
-- Subtle lift: translateY(-2px)
-- Shadow enhancement: shadow-md
-- Transition: 200ms ease-out
-
-**No Animations**: Keep motion minimal - only use for meaningful state changes (drag/drop, loading states)
-
----
-
-## Images
-
-**No hero images required** - this is a utility application focused on functionality.
-
-**Icon Usage**: Heroicons (outline for inactive states, solid for active states) via CDN
-- Navigation icons: 24px
-- Action button icons: 20px
-- Status indicators: 16px
+- Collapsible sidebar on tablet
 
 ---
 
 ## Accessibility
 
-- WCAG 2.1 AA compliance for all text
-- Focus indicators: 2px outline, 4px offset on all interactive elements
-- Semantic HTML throughout (proper heading hierarchy, ARIA labels)
-- Touch targets: minimum 48×48px
-- Form labels always visible (no placeholder-only inputs)
-- Screen reader announcements for clock in/out success
+- WCAG 2.1 AA compliance
+- Focus indicators: 2px purple ring with 2px offset
+- Minimum contrast ratios maintained
+- All interactive elements have visible focus states
+- Form labels always visible
 
 ---
 
-## GPS & Location Features
+## Dark Mode Support
 
-**Location Permission Prompt**:
-- Modal overlay with clear explanation
-- Icon: location pin, 64px, centered
-- Primary CTA: "Enable Location"
-- Secondary link: "Why we need this"
+The design system includes full dark mode support:
 
-**GPS Verification Display**:
-- Success state: checkmark icon + "Location verified" message
-- Error state: warning icon + "Outside work area" with distance indicator
-- Circular radius visualization on map (100m geofence)
+**Dark Mode Colors**:
+- Background: Deep blue-black (hsl 240 20% 6%)
+- Cards: Dark glass with subtle transparency
+- Text: Off-white (hsl 0 0% 98%)
+- Accents: Brighter purple/cyan for visibility
+
+**Dark Glass Effects**:
+```css
+.dark .glass {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+```
+
+---
+
+## Usage Notes
+
+1. **Always use glass effects on surfaces** that overlay content or backgrounds
+2. **Apply gradient-hero** to hero sections for the signature ethereal look
+3. **Use text-gradient** sparingly for important headings only
+4. **Maintain consistent border-radius** throughout the application
+5. **Purple accent** is primary, cyan is secondary - use gradient between them for CTAs
+6. **Glow effects** should be subtle - don't overuse
+7. **Animations** should be purposeful and enhance UX, not distract
