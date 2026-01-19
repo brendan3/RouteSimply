@@ -97,6 +97,19 @@ UI preferences persist across navigation using localStorage:
    - View location info, scheduled days, and assigned materials
    - Admin can assign/remove materials from the dialog
 
+10. **AI Chat Assistant** (Admin Only)
+    - Floating "Ask AI" button in bottom-right corner
+    - Natural language interface to ask questions about app data
+    - **Function calling capabilities**:
+      - Create new customers/delivery stops via conversation
+      - Search for existing customers
+      - Update customer information
+      - Delete customers (with confirmation)
+      - Add new drivers
+    - Quick action buttons: Add Customer, Find Customer, Add Driver, Get Help
+    - Conversation history persisted in localStorage
+    - Glass UI design with gradient header
+
 ### Driver Mobile View
 1. **Schedule**
    - View assigned route for the day
@@ -163,6 +176,11 @@ UI preferences persist across navigation using localStorage:
 - `GET /api/locations/:locationId/materials` - Get materials for a location
 - `POST /api/locations/:locationId/materials` - Assign material to location (body: { materialId, quantity?, daysOfWeek? })
 - `DELETE /api/location-materials/:id` - Remove material assignment
+
+### AI Chat
+- `POST /api/chat` - Send message to AI assistant (body: { message, conversationHistory, userId })
+  - Uses OpenAI function calling for actions (create_customer, search_customers, update_customer, delete_customer, add_driver)
+  - Returns: { response: string }
 
 ## CSV Upload Format
 Required columns:
