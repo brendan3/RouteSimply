@@ -2001,6 +2001,298 @@ export async function registerRoutes(
   });
 
   // ============ AI CHAT ROUTES ============
+  
+  // Define tools for AI function calling
+  const chatTools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
+    {
+      type: "function",
+      function: {
+        name: "create_customer",
+        description: "Create a new customer/delivery stop in the system. Use this when the user wants to add a new customer or delivery location.",
+        parameters: {
+          type: "object",
+          properties: {
+            customerName: {
+              type: "string",
+              description: "The name of the customer or business"
+            },
+            address: {
+              type: "string", 
+              description: "The full street address for delivery"
+            },
+            serviceType: {
+              type: "string",
+              description: "Type of service (e.g., 'Delivery', 'Pickup', 'Service')"
+            },
+            notes: {
+              type: "string",
+              description: "Any special instructions or notes"
+            },
+            daysOfWeek: {
+              type: "array",
+              items: { type: "string" },
+              description: "Days when this stop should be scheduled (e.g., ['monday', 'wednesday', 'friday'])"
+            }
+          },
+          required: ["customerName", "address"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "search_customers",
+        description: "Search for existing customers by name or address. Use this to find customers before creating duplicates.",
+        parameters: {
+          type: "object",
+          properties: {
+            query: {
+              type: "string",
+              description: "Search term to find customers (matches name or address)"
+            }
+          },
+          required: ["query"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "update_customer",
+        description: "Update an existing customer's information like address, service type, notes, or schedule days.",
+        parameters: {
+          type: "object",
+          properties: {
+            customerId: {
+              type: "string",
+              description: "The ID of the customer to update"
+            },
+            customerName: {
+              type: "string",
+              description: "Updated customer name"
+            },
+            address: {
+              type: "string",
+              description: "Updated address"
+            },
+            serviceType: {
+              type: "string",
+              description: "Updated service type"
+            },
+            notes: {
+              type: "string",
+              description: "Updated notes"
+            },
+            daysOfWeek: {
+              type: "array",
+              items: { type: "string" },
+              description: "Updated days of week for scheduling"
+            }
+          },
+          required: ["customerId"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "delete_customer",
+        description: "Delete/remove a customer from the system. Use with caution.",
+        parameters: {
+          type: "object",
+          properties: {
+            customerId: {
+              type: "string",
+              description: "The ID of the customer to delete"
+            }
+          },
+          required: ["customerId"]
+        }
+      }
+    },
+    {
+      type: "function",
+      function: {
+        name: "add_driver",
+        description: "Create a new driver in the system with login credentials.",
+        parameters: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              description: "The driver's full name"
+            },
+            username: {
+              type: "string",
+              description: "Login username for the driver"
+            },
+            password: {
+              type: "string",
+              description: "Login password for the driver"
+            },
+            phone: {
+              type: "string",
+              description: "Driver's phone number (optional)"
+            },
+            color: {
+              type: "string",
+              description: "Hex color code for driver display (optional, e.g., '#3B82F6')"
+            }
+          },
+          required: ["name", "username", "password"]
+        }
+      }
+    }
+  ];
+
+  // Execute tool calls
+  async function executeToolCall(toolCall: OpenAI.Chat.Completions.ChatCompletionMessageToolCall): Promise<string> {
+    const { name, arguments: argsString } = toolCall.function;
+    let args: Record<string, unknown>;
+    
+    try {
+      args = JSON.parse(argsString);
+    } catch {
+      return JSON.stringify({ error: "Failed to parse tool arguments" });
+    }
+
+    switch (name) {
+      case "create_customer": {
+        const { customerName, address, serviceType, notes, daysOfWeek } = args as {
+          customerName: string;
+          address: string;
+          serviceType?: string;
+          notes?: string;
+          daysOfWeek?: string[];
+        };
+        
+        try {
+          const newLocation = await storage.createLocation({
+            customerName,
+            address,
+            serviceType: serviceType || null,
+            notes: notes || null,
+            daysOfWeek: daysOfWeek || null,
+            lat: null,
+            lng: null,
+          });
+          return JSON.stringify({ 
+            success: true, 
+            message: `Successfully created customer "${customerName}" at ${address}`,
+            customer: newLocation 
+          });
+        } catch (error: any) {
+          return JSON.stringify({ error: error.message || "Failed to create customer" });
+        }
+      }
+
+      case "search_customers": {
+        const { query } = args as { query: string };
+        const allLocations = await storage.getAllLocations();
+        const searchLower = query.toLowerCase();
+        const matches = allLocations.filter(loc => 
+          loc.customerName.toLowerCase().includes(searchLower) ||
+          loc.address.toLowerCase().includes(searchLower)
+        );
+        return JSON.stringify({ 
+          success: true, 
+          count: matches.length,
+          customers: matches.slice(0, 10).map(m => ({
+            id: m.id,
+            name: m.customerName,
+            address: m.address,
+            serviceType: m.serviceType,
+            daysOfWeek: m.daysOfWeek
+          }))
+        });
+      }
+
+      case "update_customer": {
+        const { customerId, customerName, address, serviceType, notes, daysOfWeek } = args as {
+          customerId: string;
+          customerName?: string;
+          address?: string;
+          serviceType?: string;
+          notes?: string;
+          daysOfWeek?: string[];
+        };
+        
+        try {
+          const existing = await storage.getLocation(customerId);
+          if (!existing) {
+            return JSON.stringify({ error: "Customer not found" });
+          }
+          
+          const updated = await storage.updateLocation(customerId, {
+            customerName: customerName || existing.customerName,
+            address: address || existing.address,
+            serviceType: serviceType !== undefined ? serviceType : existing.serviceType,
+            notes: notes !== undefined ? notes : existing.notes,
+            daysOfWeek: daysOfWeek !== undefined ? daysOfWeek : existing.daysOfWeek,
+          });
+          return JSON.stringify({ 
+            success: true, 
+            message: `Updated customer "${updated.customerName}"`,
+            customer: updated 
+          });
+        } catch (error: any) {
+          return JSON.stringify({ error: error.message || "Failed to update customer" });
+        }
+      }
+
+      case "delete_customer": {
+        const { customerId } = args as { customerId: string };
+        try {
+          const existing = await storage.getLocation(customerId);
+          if (!existing) {
+            return JSON.stringify({ error: "Customer not found" });
+          }
+          await storage.deleteLocation(customerId);
+          return JSON.stringify({ 
+            success: true, 
+            message: `Deleted customer "${existing.customerName}"` 
+          });
+        } catch (error: any) {
+          return JSON.stringify({ error: error.message || "Failed to delete customer" });
+        }
+      }
+
+      case "add_driver": {
+        const { name, username, password, phone, color } = args as {
+          name: string;
+          username: string;
+          password: string;
+          phone?: string;
+          color?: string;
+        };
+        
+        try {
+          const newDriver = await storage.createUser({
+            name,
+            username,
+            password,
+            phone: phone || null,
+            color: color || null,
+            role: "driver"
+          });
+          return JSON.stringify({ 
+            success: true, 
+            message: `Successfully created driver "${name}" with username "${username}"`,
+            driver: { id: newDriver.id, name: newDriver.name, username: newDriver.username }
+          });
+        } catch (error: any) {
+          if (error.message?.includes("unique") || error.code === "23505") {
+            return JSON.stringify({ error: `Username "${username}" is already taken` });
+          }
+          return JSON.stringify({ error: error.message || "Failed to create driver" });
+        }
+      }
+
+      default:
+        return JSON.stringify({ error: `Unknown tool: ${name}` });
+    }
+  }
+
   app.post("/api/chat", async (req: Request, res: Response) => {
     try {
       const { message, conversationHistory = [], userId } = req.body;
@@ -2184,7 +2476,7 @@ ${(() => {
 })()}
 `;
 
-      const systemPrompt = `You are a helpful AI assistant for RouteSimply. You help administrators understand how to use the app and answer questions about their data.
+      const systemPrompt = `You are a helpful AI assistant for RouteSimply. You help administrators understand how to use the app, answer questions about their data, AND you can take actions to manage customers, delivery stops, and drivers.
 
 ## Your Capabilities:
 1. Answer "how to" questions using the app documentation
@@ -2194,6 +2486,11 @@ ${(() => {
 5. Provide detailed route information including all stops and Google Maps links for navigation
 6. Answer questions about materials inventory and which materials are assigned to each location
 7. Provide information about drivers, their assigned routes, and time tracking entries
+8. **CREATE new customers/delivery stops** - Use the create_customer tool when asked to add a customer
+9. **SEARCH for customers** - Use search_customers tool to find existing customers
+10. **UPDATE customers** - Use update_customer tool to modify customer details
+11. **DELETE customers** - Use delete_customer tool to remove customers (ask for confirmation first)
+12. **ADD new drivers** - Use add_driver tool to create driver accounts
 
 ## Guidelines:
 - Be concise but helpful
@@ -2205,6 +2502,10 @@ ${(() => {
 - If you don't know something, admit it and suggest where they might find the answer
 - Format responses with markdown for readability
 - Make links clickable by using proper markdown format: [Open in Google Maps](URL)
+- **IMPORTANT**: When the user asks you to add, create, or register a new customer or delivery stop, USE the create_customer tool immediately with the provided information
+- **IMPORTANT**: When asked to add a driver, use the add_driver tool
+- Before creating a customer, you may use search_customers to check if they already exist
+- Always confirm successful actions to the user with the details of what was created/updated
 
 ## App Documentation:
 ${helpContent}
@@ -2223,14 +2524,45 @@ ${dataSummary}
         { role: "user", content: message },
       ];
 
-      const completion = await openai.chat.completions.create({
+      // First completion with tools
+      let completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages,
+        tools: chatTools,
+        tool_choice: "auto",
         temperature: 0.7,
         max_tokens: 1000,
       });
 
-      const response = completion.choices[0]?.message?.content || "I'm sorry, I couldn't generate a response.";
+      let assistantMessage = completion.choices[0]?.message;
+      
+      // Handle tool calls if any
+      if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
+        // Add assistant message with tool calls to messages
+        messages.push(assistantMessage);
+        
+        // Execute each tool call and add results
+        for (const toolCall of assistantMessage.tool_calls) {
+          const result = await executeToolCall(toolCall);
+          messages.push({
+            role: "tool",
+            tool_call_id: toolCall.id,
+            content: result,
+          });
+        }
+        
+        // Get final response after tool execution
+        completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages,
+          temperature: 0.7,
+          max_tokens: 1000,
+        });
+        
+        assistantMessage = completion.choices[0]?.message;
+      }
+
+      const response = assistantMessage?.content || "I'm sorry, I couldn't generate a response.";
 
       return res.json({ response });
     } catch (error: any) {

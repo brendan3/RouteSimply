@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MessageCircle, X, Send, Loader2, Bot, User } from "lucide-react";
+import { MessageCircle, X, Send, Loader2, Bot, User, Sparkles, Plus, Search, UserPlus, Trash2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuthContext } from "@/context/auth-context";
 
@@ -17,7 +17,6 @@ const MAX_PERSISTED_MESSAGES = 50;
 export function AIChat() {
   const { user } = useAuthContext();
   const [isOpen, setIsOpen] = useState(() => {
-    // Initialize from localStorage (with SSR guard)
     if (typeof window === "undefined") return false;
     try {
       const saved = localStorage.getItem("ai-chat-open");
@@ -27,13 +26,11 @@ export function AIChat() {
     }
   });
   const [messages, setMessages] = useState<Message[]>(() => {
-    // Initialize messages from localStorage (with SSR guard)
     if (typeof window === "undefined") return [];
     try {
       const saved = localStorage.getItem("ai-chat-messages");
       if (saved) {
         const parsed = JSON.parse(saved);
-        // Cap to last N messages on load
         return Array.isArray(parsed) ? parsed.slice(-MAX_PERSISTED_MESSAGES) : [];
       }
     } catch {
@@ -46,24 +43,20 @@ export function AIChat() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Persist chat open state to localStorage
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       localStorage.setItem("ai-chat-open", String(isOpen));
     } catch {
-      // Ignore storage errors
     }
   }, [isOpen]);
 
-  // Persist messages to localStorage (capped to prevent storage overflow)
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       const toStore = messages.slice(-MAX_PERSISTED_MESSAGES);
       localStorage.setItem("ai-chat-messages", JSON.stringify(toStore));
     } catch {
-      // Ignore storage errors
     }
   }, [messages]);
 
@@ -114,7 +107,6 @@ export function AIChat() {
 
   const parseInlineElements = (text: string, keyPrefix: string): (string | JSX.Element)[] => {
     const parts: (string | JSX.Element)[] = [];
-    // Combined regex for links and bold text
     const inlineRegex = /\[([^\]]+)\]\(([^)]+)\)|\*\*([^*]+)\*\*/g;
     let lastIndex = 0;
     let match;
@@ -126,20 +118,18 @@ export function AIChat() {
       }
       
       if (match[1] && match[2]) {
-        // Link: [text](url)
         parts.push(
           <a
             key={`${keyPrefix}-link-${partIndex++}`}
             href={match[2]}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary underline hover:text-primary/80 break-all"
+            className="text-primary underline break-all font-medium"
           >
             {match[1]}
           </a>
         );
       } else if (match[3]) {
-        // Bold: **text**
         parts.push(
           <strong key={`${keyPrefix}-bold-${partIndex++}`} className="font-semibold">
             {match[3]}
@@ -212,79 +202,146 @@ export function AIChat() {
 
   const handleSuggestionClick = (suggestion: string) => {
     setInput(suggestion);
+    inputRef.current?.focus();
+  };
+
+  const clearHistory = () => {
+    setMessages([]);
+    localStorage.removeItem("ai-chat-messages");
   };
 
   return (
     <>
       {!isOpen && (
-        <div className="fixed bottom-6 right-6 z-50">
+        <div className="fixed bottom-6 right-6 z-50 animate-fade-in">
           <Button
             data-testid="button-open-chat"
             onClick={() => setIsOpen(true)}
-            className="rounded-full shadow-lg px-4"
+            className="rounded-full shadow-lg gap-2"
           >
-            <MessageCircle className="h-5 w-5 mr-2" />
-            <span>Ask AI</span>
+            <Sparkles className="h-5 w-5" />
+            <span className="font-medium">Ask AI</span>
           </Button>
         </div>
       )}
 
       {isOpen && (
         <Card 
-          className="fixed bottom-6 right-6 w-[380px] h-[520px] flex flex-col shadow-2xl z-50 overflow-hidden"
+          className="fixed bottom-6 right-6 w-[400px] h-[560px] flex flex-col shadow-2xl z-50 overflow-visible border-0 backdrop-blur-xl bg-white/90 dark:bg-gray-900/90 rounded-2xl animate-scale-in"
+          style={{ 
+            boxShadow: "0 25px 50px -12px rgba(139, 92, 246, 0.25), 0 0 0 1px rgba(255,255,255,0.1)" 
+          }}
           data-testid="chat-panel"
         >
-          <div className="flex items-center justify-between gap-2 p-3 border-b bg-primary text-primary-foreground">
-            <div className="flex items-center gap-2">
-              <Bot className="h-5 w-5" />
-              <span className="font-medium">AI Assistant</span>
+          <div className="flex items-center justify-between gap-2 p-4 border-b border-white/10 bg-gradient-to-r from-purple-600 via-purple-500 to-blue-500 rounded-t-2xl">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                <Sparkles className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <span className="font-semibold text-white block text-sm">AI Assistant</span>
+                <span className="text-white/70 text-xs">Ask me anything or take actions</span>
+              </div>
             </div>
-            <Button
-              data-testid="button-close-chat"
-              variant="ghost"
-              size="icon"
-              className="text-primary-foreground"
-              onClick={() => setIsOpen(false)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-1">
+              {messages.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={clearHistory}
+                  title="Clear chat history"
+                  data-testid="button-clear-chat"
+                >
+                  <Trash2 className="h-4 w-4 text-white/80" />
+                </Button>
+              )}
+              <Button
+                data-testid="button-close-chat"
+                variant="ghost"
+                size="icon"
+                onClick={() => setIsOpen(false)}
+              >
+                <X className="h-4 w-4 text-white" />
+              </Button>
+            </div>
           </div>
 
           <ScrollArea className="flex-1 p-4" ref={scrollRef}>
             {messages.length === 0 && (
-              <div className="text-center py-8 text-muted-foreground">
-                <Bot className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p className="text-sm font-medium mb-2">Hi! I'm your AI assistant.</p>
-                <p className="text-xs">Ask me how to use the app or questions about your routes, drivers, and schedules.</p>
-                <div className="mt-4 space-y-2">
-                  <p className="text-xs font-medium text-foreground">Try asking:</p>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSuggestionClick("How do I generate routes?")}
-                    className="w-full justify-start text-xs"
-                    data-testid="button-suggestion-1"
-                  >
-                    "How do I generate routes?"
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSuggestionClick("How many stops are scheduled for each day?")}
-                    className="w-full justify-start text-xs"
-                    data-testid="button-suggestion-2"
-                  >
-                    "How many stops are scheduled for each day?"
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleSuggestionClick("Who are my drivers?")}
-                    className="w-full justify-start text-xs"
-                    data-testid="button-suggestion-3"
-                  >
-                    "Who are my drivers?"
-                  </Button>
+              <div className="text-center py-6 animate-fade-in">
+                <div className="h-16 w-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-purple-100 to-blue-100 dark:from-purple-900/30 dark:to-blue-900/30 flex items-center justify-center">
+                  <Sparkles className="h-8 w-8 text-purple-500" />
+                </div>
+                <p className="text-base font-medium mb-1 text-foreground">Hi! I'm your AI assistant.</p>
+                <p className="text-sm text-muted-foreground mb-6">I can answer questions and help you manage customers and drivers.</p>
+                
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">Quick Actions</p>
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSuggestionClick("Add a new customer named ")}
+                      className="justify-start text-xs"
+                      data-testid="button-suggestion-add-customer"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1.5 text-purple-500" />
+                      Add Customer
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSuggestionClick("Search for customer ")}
+                      className="justify-start text-xs"
+                      data-testid="button-suggestion-search"
+                    >
+                      <Search className="h-3.5 w-3.5 mr-1.5 text-blue-500" />
+                      Find Customer
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSuggestionClick("Add a new driver named ")}
+                      className="justify-start text-xs"
+                      data-testid="button-suggestion-add-driver"
+                    >
+                      <UserPlus className="h-3.5 w-3.5 mr-1.5 text-cyan-500" />
+                      Add Driver
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSuggestionClick("How do I generate routes?")}
+                      className="justify-start text-xs"
+                      data-testid="button-suggestion-help"
+                    >
+                      <MessageCircle className="h-3.5 w-3.5 mr-1.5 text-gray-500" />
+                      Get Help
+                    </Button>
+                  </div>
+                  
+                  <div className="pt-4 space-y-1.5">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Example Questions</p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSuggestionClick("How many stops are scheduled for each day?")}
+                      className="w-full justify-start text-xs text-muted-foreground"
+                      data-testid="button-suggestion-2"
+                    >
+                      "How many stops are scheduled for each day?"
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleSuggestionClick("Who are my drivers?")}
+                      className="w-full justify-start text-xs text-muted-foreground"
+                      data-testid="button-suggestion-3"
+                    >
+                      "Who are my drivers?"
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
@@ -293,25 +350,25 @@ export function AIChat() {
               {messages.map((msg, idx) => (
                 <div
                   key={idx}
-                  className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                  className={`flex gap-2.5 ${msg.role === "user" ? "justify-end" : "justify-start"} animate-fade-in`}
                   data-testid={`chat-message-${msg.role}-${idx}`}
                 >
                   {msg.role === "assistant" && (
-                    <div className="flex-shrink-0 h-7 w-7 rounded-full bg-primary flex items-center justify-center">
-                      <Bot className="h-4 w-4 text-primary-foreground" />
+                    <div className="flex-shrink-0 h-7 w-7 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-sm">
+                      <Bot className="h-4 w-4 text-white" />
                     </div>
                   )}
                   <div
-                    className={`max-w-[280px] rounded-lg p-3 ${
+                    className={`max-w-[280px] rounded-2xl p-3 shadow-sm ${
                       msg.role === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted"
+                        ? "bg-primary text-primary-foreground rounded-br-md"
+                        : "bg-card border border-border rounded-bl-md"
                     }`}
                   >
                     {msg.role === "user" ? (
                       <p className="text-sm">{msg.content}</p>
                     ) : (
-                      <div className="prose prose-sm dark:prose-invert">{formatMessage(msg.content)}</div>
+                      <div className="prose prose-sm dark:prose-invert prose-p:my-1 prose-headings:my-1">{formatMessage(msg.content)}</div>
                     )}
                   </div>
                   {msg.role === "user" && (
@@ -322,34 +379,39 @@ export function AIChat() {
                 </div>
               ))}
               {isLoading && (
-                <div className="flex gap-2 justify-start" data-testid="chat-loading">
-                  <div className="flex-shrink-0 h-7 w-7 rounded-full bg-primary flex items-center justify-center">
-                    <Bot className="h-4 w-4 text-primary-foreground" />
+                <div className="flex gap-2.5 justify-start animate-fade-in" data-testid="chat-loading">
+                  <div className="flex-shrink-0 h-7 w-7 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center shadow-sm">
+                    <Bot className="h-4 w-4 text-white" />
                   </div>
-                  <div className="bg-muted rounded-lg p-3">
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                  <div className="bg-card border border-border rounded-2xl rounded-bl-md p-3 shadow-sm">
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }}></div>
+                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }}></div>
+                      <div className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }}></div>
+                    </div>
                   </div>
                 </div>
               )}
             </div>
           </ScrollArea>
 
-          <div className="p-3 border-t">
+          <div className="p-3 border-t border-border bg-muted/50 backdrop-blur-sm rounded-b-2xl">
             <div className="flex gap-2">
               <Input
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Ask a question..."
+                placeholder="Ask a question or give a command..."
                 disabled={isLoading}
-                className="flex-1"
+                className="flex-1 rounded-xl"
                 data-testid="input-chat-message"
               />
               <Button
                 onClick={sendMessage}
                 disabled={!input.trim() || isLoading}
                 size="icon"
+                className="rounded-xl"
                 data-testid="button-send-message"
               >
                 {isLoading ? (
