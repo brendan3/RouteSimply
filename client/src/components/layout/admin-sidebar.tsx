@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Map, Users, Clock, MapPin, LogOut, Package, Calendar, ClipboardCheck, Layers, ChevronDown, ChevronRight, Settings, GripVertical } from "lucide-react";
+import { Map, Users, Clock, MapPin, LogOut, Package, Calendar, ClipboardCheck, Layers, ChevronDown, ChevronRight, Settings, GripVertical, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthContext } from "@/context/auth-context";
 import { Button } from "@/components/ui/button";
@@ -43,9 +43,15 @@ interface NavItemProps {
   Icon: React.ComponentType<{ className?: string }>;
   href: string;
   isActive: boolean;
+  onNavigate?: () => void;
 }
 
-function SortableNavItem({ id, label, Icon, href, isActive }: NavItemProps) {
+interface AdminSidebarProps {
+  isOpen?: boolean;
+  onClose?: () => void;
+}
+
+function SortableNavItem({ id, label, Icon, href, isActive, onNavigate }: NavItemProps) {
   const {
     attributes,
     listeners,
@@ -73,6 +79,7 @@ function SortableNavItem({ id, label, Icon, href, isActive }: NavItemProps) {
       </button>
       <Link
         href={href}
+        onClick={onNavigate}
         data-testid={`sidebar-nav-${id}`}
         className={cn(
           "flex-1 flex items-center gap-3 px-4 py-3 rounded-xl text-[15px] font-medium transition-all",
@@ -88,9 +95,14 @@ function SortableNavItem({ id, label, Icon, href, isActive }: NavItemProps) {
   );
 }
 
-export function AdminSidebar() {
+export function AdminSidebar({ isOpen = false, onClose }: AdminSidebarProps) {
   const [location] = useLocation();
   const { user, logout } = useAuthContext();
+
+  const handleNavClick = () => {
+    // Always call onClose to ensure sidebar closes on navigation
+    onClose?.();
+  };
 
   const [settingsOpen, setSettingsOpen] = useState(() => {
     const saved = localStorage.getItem("sidebar_teamSettingsCollapsed");
@@ -150,13 +162,28 @@ export function AdminSidebar() {
   };
 
   return (
-    <aside className="w-[280px] h-screen bg-white/70 dark:bg-white/5 backdrop-blur-xl border-r border-white/30 dark:border-white/10 flex flex-col">
-      <div className="p-5 border-b border-white/20 dark:border-white/10">
+    <aside 
+      className={cn(
+        "w-[280px] h-screen bg-white/70 dark:bg-white/5 backdrop-blur-xl border-r border-white/30 dark:border-white/10 flex flex-col transition-all duration-300",
+        "fixed md:static z-50 md:z-auto",
+        isOpen ? "translate-x-0 visible" : "-translate-x-full md:translate-x-0 invisible md:visible"
+      )}
+    >
+      <div className="p-5 border-b border-white/20 dark:border-white/10 flex items-center justify-between">
         <img 
           src={logoUrl} 
           alt="RouteSimply" 
           className="h-10"
         />
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onClose}
+          className="md:hidden"
+          data-testid="button-close-sidebar"
+        >
+          <X className="w-5 h-5" />
+        </Button>
       </div>
 
       <nav className="flex-1 p-4 overflow-y-auto">
@@ -178,6 +205,7 @@ export function AdminSidebar() {
                   Icon={Icon}
                   href={href}
                   isActive={isNavItemActive(href)}
+                  onNavigate={handleNavClick}
                 />
               ))}
             </div>
@@ -202,6 +230,7 @@ export function AdminSidebar() {
                   <Link
                     key={id}
                     href={href}
+                    onClick={handleNavClick}
                     data-testid={`sidebar-nav-${id}`}
                     className={cn(
                       "flex items-center gap-3 px-4 py-3 rounded-xl text-[15px] font-medium transition-all",
