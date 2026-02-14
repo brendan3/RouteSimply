@@ -1,3 +1,9 @@
+/**
+ * Seed script: creates demo admin, driver, and work location.
+ * Tables must exist first. For a fresh DB: npm run db:setup (push schema then seed).
+ * Or: npm run db:push then npm run db:seed.
+ * From your laptop against Railway: use DATABASE_PUBLIC_URL (not the internal URL).
+ */
 import { db } from "./db";
 import { users, workLocations } from "@shared/schema";
 import { eq } from "drizzle-orm";
