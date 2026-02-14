@@ -9,6 +9,7 @@ const allowlist = [
   "axios",
   "connect-pg-simple",
   "cors",
+  "csv-parse",
   "date-fns",
   "drizzle-orm",
   "drizzle-zod",
@@ -30,6 +31,7 @@ const allowlist = [
   "xlsx",
   "zod",
   "zod-validation-error",
+  // Note: bcrypt is intentionally NOT bundled (native module, must stay external)
 ];
 
 async function buildAll() {

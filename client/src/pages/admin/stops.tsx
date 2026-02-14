@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { apiUpload } from "@/lib/queryClient";
 import {
   Table,
   TableBody,
@@ -80,15 +81,7 @@ export default function AdminStopsPage() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("file", file);
-      const response = await fetch("/api/locations/upload", {
-        method: "POST",
-        body: formData,
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Upload failed");
-      }
-      return response.json();
+      return apiUpload("/api/locations/upload", formData);
     },
     onSuccess: () => {
       setUploadSuccess(true);

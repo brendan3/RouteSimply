@@ -85,7 +85,6 @@ export function AIChat() {
       const data = await apiRequest<{ response: string }>("POST", "/api/chat", {
         message: userMessage,
         conversationHistory: messages.slice(-10),
-        userId: user.id,
       });
 
       setMessages(prev => [...prev, { role: "assistant", content: data.response }]);

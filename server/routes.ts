@@ -19,6 +19,15 @@ import {
 import { eq, sql } from "drizzle-orm";
 import OpenAI from "openai";
 import * as fs from "fs";
+import rateLimit from "express-rate-limit";
+import {
+  requireAuth,
+  requireRole,
+  requireSelfOrAdmin,
+  authenticateUser,
+  generateToken,
+  hashPassword,
+} from "./auth";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -443,9 +452,37 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // ============ RATE LIMITERS ============
+  const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 10, // max 10 login attempts per window
+    message: { message: "Too many login attempts, please try again later" },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  const chatLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 10, // max 10 chat messages per minute
+    message: { message: "Too many requests, please slow down" },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  const apiLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 100, // max 100 general API requests per minute
+    message: { message: "Too many requests, please try again later" },
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
+
+  // Apply general rate limiter to all API routes
+  app.use("/api/", apiLimiter);
   
   // ============ AUTH ROUTES ============
-  app.post("/api/auth/login", async (req: Request, res: Response) => {
+  app.post("/api/auth/login", loginLimiter, async (req: Request, res: Response) => {
     try {
       const { username, password } = req.body;
       
@@ -453,15 +490,30 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Username and password are required" });
       }
 
-      const user = await storage.getUserByUsername(username);
+      const authResult = await authenticateUser(username, password);
       
-      if (!user || user.password !== password) {
+      if (!authResult) {
         return res.status(401).json({ message: "Invalid username or password" });
       }
 
-      // Return user without password
+      // Generate JWT token
+      const token = generateToken({
+        userId: authResult.userId,
+        username: authResult.username,
+        role: authResult.role,
+      });
+
+      // Get full user record for frontend (without password)
+      const user = await storage.getUserByUsername(username);
+      if (!user) {
+        return res.status(500).json({ message: "Internal server error" });
+      }
       const { password: _, ...userWithoutPassword } = user;
-      return res.json(userWithoutPassword);
+
+      return res.json({
+        ...userWithoutPassword,
+        token,
+      });
     } catch (error) {
       console.error("Login error:", error);
       return res.status(500).json({ message: "Internal server error" });
@@ -469,7 +521,7 @@ export async function registerRoutes(
   });
 
   // ============ USER ROUTES ============
-  app.get("/api/users", async (_req: Request, res: Response) => {
+  app.get("/api/users", requireAuth, requireRole("admin"), async (_req: Request, res: Response) => {
     try {
       const users = await storage.getAllUsers();
       // Remove passwords from response
@@ -481,7 +533,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/users", async (req: Request, res: Response) => {
+  app.post("/api/users", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const validation = insertUserSchema.safeParse(req.body);
       
@@ -501,11 +553,14 @@ export async function registerRoutes(
         return res.status(409).json({ message: "Username already exists" });
       }
 
+      // Hash password before storing
+      const hashedPassword = await hashPassword(password);
+
       const user = await storage.createUser({
         name,
         phone: phone || null,
         username,
-        password,
+        password: hashedPassword,
         role: role || "driver",
       });
 
@@ -517,7 +572,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/users/:id", async (req: Request, res: Response) => {
+  app.delete("/api/users/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       await storage.deleteUser(req.params.id);
       return res.status(204).send();
@@ -527,7 +582,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/users/:id", async (req: Request, res: Response) => {
+  app.patch("/api/users/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { color } = req.body;
@@ -542,7 +597,7 @@ export async function registerRoutes(
   });
 
   // ============ LOCATIONS (Delivery Stops) ROUTES ============
-  app.get("/api/locations", async (_req: Request, res: Response) => {
+  app.get("/api/locations", requireAuth, async (_req: Request, res: Response) => {
     try {
       const locations = await storage.getAllLocations();
       return res.json(locations);
@@ -552,7 +607,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/locations/:id", async (req: Request, res: Response) => {
+  app.patch("/api/locations/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { daysOfWeek, address, customerName, serviceType, notes } = req.body;
@@ -574,7 +629,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/locations/:id", async (req: Request, res: Response) => {
+  app.delete("/api/locations/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       await storage.deleteLocation(req.params.id);
       return res.status(204).send();
@@ -585,7 +640,7 @@ export async function registerRoutes(
   });
 
   // Re-geocode all locations that don't have coordinates
-  app.post("/api/locations/geocode", async (_req: Request, res: Response) => {
+  app.post("/api/locations/geocode", requireAuth, requireRole("admin"), async (_req: Request, res: Response) => {
     try {
       const locations = await storage.getAllLocations();
       const locationsWithoutCoords = locations.filter(loc => loc.lat == null || loc.lng == null);
@@ -622,7 +677,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/locations/upload", upload.single("file"), async (req: Request, res: Response) => {
+  app.post("/api/locations/upload", requireAuth, requireRole("admin"), upload.single("file"), async (req: Request, res: Response) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -750,7 +805,7 @@ export async function registerRoutes(
   });
 
   // ============ ROUTES ROUTES ============
-  app.get("/api/routes", async (req: Request, res: Response) => {
+  app.get("/api/routes", requireAuth, async (req: Request, res: Response) => {
     try {
       const { driverId, dayOfWeek } = req.query;
       
@@ -951,7 +1006,7 @@ export async function registerRoutes(
     return createdRoutes;
   }
 
-  app.post("/api/routes/generate", async (req: Request, res: Response) => {
+  app.post("/api/routes/generate", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const { driverCount, dayOfWeek, scheduledDate } = req.body;
 
@@ -1037,7 +1092,7 @@ export async function registerRoutes(
   });
 
   // Manual route creation endpoint
-  app.post("/api/routes/create-manual", async (req: Request, res: Response) => {
+  app.post("/api/routes/create-manual", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const validation = createManualRoutesSchema.safeParse(req.body);
 
@@ -1128,7 +1183,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/routes/:id/assign", async (req: Request, res: Response) => {
+  app.patch("/api/routes/:id/assign", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { driverId, driverName, driverColor } = req.body;
@@ -1150,7 +1205,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/routes/:id", async (req: Request, res: Response) => {
+  app.patch("/api/routes/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const route = await storage.updateRoute(id, req.body);
@@ -1161,7 +1216,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/routes/:id/stops", async (req: Request, res: Response) => {
+  app.patch("/api/routes/:id/stops", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const validation = updateStopsSchema.safeParse(req.body);
@@ -1193,7 +1248,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/routes/move-stop", async (req: Request, res: Response) => {
+  app.post("/api/routes/move-stop", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const validation = moveStopSchema.safeParse(req.body);
 
@@ -1260,7 +1315,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/routes/publish", async (_req: Request, res: Response) => {
+  app.post("/api/routes/publish", requireAuth, requireRole("admin"), async (_req: Request, res: Response) => {
     try {
       const routes = await storage.getAllRoutes();
       
@@ -1277,7 +1332,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/routes/unpublish", async (req: Request, res: Response) => {
+  app.post("/api/routes/unpublish", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const { date } = req.query;
       const routes = await storage.getAllRoutes();
@@ -1305,7 +1360,7 @@ export async function registerRoutes(
   });
 
   // Unpublish a single route
-  app.patch("/api/routes/:id/unpublish", async (req: Request, res: Response) => {
+  app.patch("/api/routes/:id/unpublish", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const routeId = req.params.id;
       const route = await storage.getRoute(routeId);
@@ -1327,7 +1382,7 @@ export async function registerRoutes(
   });
 
   // Refresh all route stops with updated coordinates from locations
-  app.post("/api/routes/refresh-coordinates", async (_req: Request, res: Response) => {
+  app.post("/api/routes/refresh-coordinates", requireAuth, requireRole("admin"), async (_req: Request, res: Response) => {
     try {
       const routes = await storage.getAllRoutes();
       const locations = await storage.getAllLocations();
@@ -1393,7 +1448,7 @@ export async function registerRoutes(
   });
 
   // Delete a route
-  app.delete("/api/routes/:id", async (req: Request, res: Response) => {
+  app.delete("/api/routes/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       await storage.deleteRoute(id);
@@ -1405,7 +1460,7 @@ export async function registerRoutes(
   });
 
   // ============ TIME ENTRIES ROUTES ============
-  app.get("/api/time-entries", async (_req: Request, res: Response) => {
+  app.get("/api/time-entries", requireAuth, requireRole("admin"), async (_req: Request, res: Response) => {
     try {
       const entries = await storage.getAllTimeEntries();
       return res.json(entries);
@@ -1415,7 +1470,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/time-entries/today", async (req: Request, res: Response) => {
+  app.get("/api/time-entries/today", requireAuth, async (req: Request, res: Response) => {
     try {
       const { driverId } = req.query;
       
@@ -1437,7 +1492,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/time-entries/clock-in", async (req: Request, res: Response) => {
+  app.post("/api/time-entries/clock-in", requireAuth, async (req: Request, res: Response) => {
     try {
       const validation = clockInSchema.safeParse(req.body);
       
@@ -1513,7 +1568,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/time-entries/clock-out", async (req: Request, res: Response) => {
+  app.post("/api/time-entries/clock-out", requireAuth, async (req: Request, res: Response) => {
     try {
       const validation = clockOutSchema.safeParse(req.body);
       
@@ -1576,7 +1631,8 @@ export async function registerRoutes(
   });
 
   // ============ CONFIG ROUTES ============
-  app.get("/api/config/maps-key", async (_req: Request, res: Response) => {
+  // Maps key now requires auth - prevents unauthenticated exposure
+  app.get("/api/config/maps-key", requireAuth, async (_req: Request, res: Response) => {
     try {
       const apiKey = process.env.GOOGLE_MAPS_API_KEY;
       
@@ -1592,7 +1648,7 @@ export async function registerRoutes(
   });
 
   // ============ WORK LOCATIONS ROUTES ============
-  app.get("/api/work-locations", async (_req: Request, res: Response) => {
+  app.get("/api/work-locations", requireAuth, async (_req: Request, res: Response) => {
     try {
       const locations = await storage.getAllWorkLocations();
       return res.json(locations);
@@ -1602,7 +1658,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/work-locations", async (req: Request, res: Response) => {
+  app.post("/api/work-locations", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const { name, address, lat, lng, radiusMeters } = req.body;
 
@@ -1645,7 +1701,7 @@ export async function registerRoutes(
     }
   });
 
-  app.delete("/api/work-locations/:id", async (req: Request, res: Response) => {
+  app.delete("/api/work-locations/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       await storage.deleteWorkLocation(req.params.id);
       return res.status(204).send();
@@ -1658,7 +1714,7 @@ export async function registerRoutes(
   // ============ MATERIALS ROUTES ============
 
   // Get all materials with aggregated quantities
-  app.get("/api/materials", async (_req: Request, res: Response) => {
+  app.get("/api/materials", requireAuth, async (_req: Request, res: Response) => {
     try {
       const allMaterials = await storage.getAllMaterials();
       
@@ -1690,7 +1746,7 @@ export async function registerRoutes(
   });
 
   // Get single material
-  app.get("/api/materials/:id", async (req: Request, res: Response) => {
+  app.get("/api/materials/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const material = await storage.getMaterial(req.params.id);
       if (!material) {
@@ -1704,7 +1760,7 @@ export async function registerRoutes(
   });
 
   // Create material
-  app.post("/api/materials", async (req: Request, res: Response) => {
+  app.post("/api/materials", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const parseResult = insertMaterialSchema.safeParse(req.body);
       if (!parseResult.success) {
@@ -1729,7 +1785,7 @@ export async function registerRoutes(
     stockQuantity: z.number().int().min(0).optional(),
   });
 
-  app.patch("/api/materials/:id", async (req: Request, res: Response) => {
+  app.patch("/api/materials/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const material = await storage.getMaterial(req.params.id);
       if (!material) {
@@ -1759,7 +1815,7 @@ export async function registerRoutes(
   });
 
   // Delete material
-  app.delete("/api/materials/:id", async (req: Request, res: Response) => {
+  app.delete("/api/materials/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       await storage.deleteMaterial(req.params.id);
       return res.status(204).send();
@@ -1770,7 +1826,7 @@ export async function registerRoutes(
   });
 
   // Upload materials from CSV
-  app.post("/api/materials/upload", upload.single("file"), async (req: Request, res: Response) => {
+  app.post("/api/materials/upload", requireAuth, requireRole("admin"), upload.single("file"), async (req: Request, res: Response) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -1836,7 +1892,7 @@ export async function registerRoutes(
   // ============ LOCATION MATERIALS ROUTES ============
 
   // Get materials for a location
-  app.get("/api/locations/:locationId/materials", async (req: Request, res: Response) => {
+  app.get("/api/locations/:locationId/materials", requireAuth, async (req: Request, res: Response) => {
     try {
       const locationMaterials = await storage.getLocationMaterials(req.params.locationId);
       return res.json(locationMaterials);
@@ -1847,7 +1903,7 @@ export async function registerRoutes(
   });
 
   // Add material to location
-  app.post("/api/locations/:locationId/materials", async (req: Request, res: Response) => {
+  app.post("/api/locations/:locationId/materials", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const { materialId, quantity, daysOfWeek } = req.body;
       
@@ -1876,7 +1932,7 @@ export async function registerRoutes(
   });
 
   // Update location material (quantity)
-  app.patch("/api/location-materials/:id", async (req: Request, res: Response) => {
+  app.patch("/api/location-materials/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const { quantity } = req.body;
       
@@ -1893,7 +1949,7 @@ export async function registerRoutes(
   });
 
   // Remove material from location
-  app.delete("/api/location-materials/:id", async (req: Request, res: Response) => {
+  app.delete("/api/location-materials/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       await storage.removeLocationMaterial(req.params.id);
       return res.status(204).send();
@@ -1904,7 +1960,7 @@ export async function registerRoutes(
   });
 
   // Remove all materials from location
-  app.delete("/api/locations/:locationId/materials", async (req: Request, res: Response) => {
+  app.delete("/api/locations/:locationId/materials", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       await storage.removeAllLocationMaterials(req.params.locationId);
       return res.status(204).send();
@@ -1917,7 +1973,7 @@ export async function registerRoutes(
   // ============ ROUTE CONFIRMATION ROUTES ============
   
   // Get confirmations for a specific date
-  app.get("/api/route-confirmations", async (req: Request, res: Response) => {
+  app.get("/api/route-confirmations", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const { date } = req.query;
       if (!date || typeof date !== "string") {
@@ -1932,7 +1988,7 @@ export async function registerRoutes(
   });
 
   // Save/update a confirmation for a specific location and date
-  app.post("/api/route-confirmations", async (req: Request, res: Response) => {
+  app.post("/api/route-confirmations", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const parseResult = routeConfirmationSchema.safeParse(req.body);
       if (!parseResult.success) {
@@ -1957,7 +2013,7 @@ export async function registerRoutes(
   });
 
   // Bulk save confirmations for a date
-  app.post("/api/route-confirmations/bulk", async (req: Request, res: Response) => {
+  app.post("/api/route-confirmations/bulk", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const parseResult = bulkRouteConfirmationSchema.safeParse(req.body);
       if (!parseResult.success) {
@@ -1986,7 +2042,7 @@ export async function registerRoutes(
   });
 
   // Delete confirmations for a specific date
-  app.delete("/api/route-confirmations", async (req: Request, res: Response) => {
+  app.delete("/api/route-confirmations", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
     try {
       const { date } = req.query;
       if (!date || typeof date !== "string") {
@@ -2267,10 +2323,12 @@ export async function registerRoutes(
         };
         
         try {
+          // Hash password before storing
+          const hashedPwd = await hashPassword(password);
           const newDriver = await storage.createUser({
             name,
             username,
-            password,
+            password: hashedPwd,
             phone: phone || null,
             color: color || null,
             role: "driver"
@@ -2293,23 +2351,16 @@ export async function registerRoutes(
     }
   }
 
-  app.post("/api/chat", async (req: Request, res: Response) => {
+  app.post("/api/chat", requireAuth, requireRole("admin"), chatLimiter, async (req: Request, res: Response) => {
     try {
-      const { message, conversationHistory = [], userId } = req.body;
+      const { message, conversationHistory = [] } = req.body;
 
       if (!message || typeof message !== "string") {
         return res.status(400).json({ message: "Message is required" });
       }
 
-      // Require userId and verify they're an admin
-      if (!userId) {
-        return res.status(401).json({ message: "Authentication required" });
-      }
-
-      const user = await storage.getUser(userId);
-      if (!user || user.role !== "admin") {
-        return res.status(403).json({ message: "Admin access required" });
-      }
+      // userId is now available from JWT middleware
+      const userId = req.user!.userId;
 
       const apiKey = process.env.OPENAI_API_KEY;
       if (!apiKey) {

@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -21,7 +20,16 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { Loader2 } from "lucide-react";
 import logoUrl from "@assets/Untitled_design_(2)_1768856385164.png";
-import type { User } from "@shared/schema";
+
+interface LoginResponse {
+  id: string;
+  name: string;
+  phone: string | null;
+  role: string;
+  username: string;
+  color: string | null;
+  token: string;
+}
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -45,12 +53,12 @@ export default function LoginPage() {
 
   const loginMutation = useMutation({
     mutationFn: async (data: LoginFormData) => {
-      const response = await apiRequest<User>("POST", "/api/auth/login", data);
+      const response = await apiRequest<LoginResponse>("POST", "/api/auth/login", data);
       return response;
     },
-    onSuccess: (user) => {
-      login(user);
-      if (user.role === "admin") {
+    onSuccess: (data) => {
+      login(data);
+      if (data.role === "admin") {
         navigate("/admin");
       } else {
         navigate("/driver");

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { apiUpload } from "@/lib/queryClient";
 import {
   Table,
   TableBody,
@@ -109,15 +110,7 @@ export default function AdminMaterialsPage() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("file", file);
-      const response = await fetch("/api/materials/upload", {
-        method: "POST",
-        body: formData,
-      });
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Upload failed");
-      }
-      return response.json();
+      return apiUpload<{ message: string; created: number; skipped: number }>("/api/materials/upload", formData);
     },
     onSuccess: (data) => {
       setShowUploadDialog(false);
