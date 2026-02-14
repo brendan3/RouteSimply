@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { users, workLocations } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { hashPassword } from "./auth";
 
 async function seed() {
   console.log("Seeding database...");
@@ -9,10 +10,11 @@ async function seed() {
   const existingAdmin = await db.select().from(users).where(eq(users.username, "admin"));
   
   if (existingAdmin.length === 0) {
+    const hashedAdminPassword = await hashPassword("admin123");
     await db.insert(users).values({
       name: "Admin User",
       username: "admin",
-      password: "admin123",
+      password: hashedAdminPassword,
       role: "admin",
       phone: null,
     });
@@ -25,10 +27,11 @@ async function seed() {
   const existingDriver = await db.select().from(users).where(eq(users.username, "driver1"));
   
   if (existingDriver.length === 0) {
+    const hashedDriverPassword = await hashPassword("driver123");
     await db.insert(users).values({
       name: "John Driver",
       username: "driver1",
-      password: "driver123",
+      password: hashedDriverPassword,
       role: "driver",
       phone: "(555) 123-4567",
     });
