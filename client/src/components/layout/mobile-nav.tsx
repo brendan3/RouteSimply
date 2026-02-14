@@ -1,4 +1,4 @@
-import { Calendar, Clock, User } from "lucide-react";
+import { Calendar, Clock, User, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface MobileNavProps {
@@ -8,7 +8,8 @@ interface MobileNavProps {
 
 const navItems = [
   { id: "schedule", label: "Schedule", Icon: Calendar },
-  { id: "clock", label: "Time Clock", Icon: Clock },
+  { id: "clock", label: "Clock", Icon: Clock },
+  { id: "messages", label: "Messages", Icon: MessageCircle },
   { id: "profile", label: "Profile", Icon: User },
 ];
 

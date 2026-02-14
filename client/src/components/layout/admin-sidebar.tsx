@@ -17,7 +17,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Map, Users, Clock, MapPin, LogOut, Package, Calendar, ClipboardCheck, Layers, ChevronDown, ChevronRight, Settings, GripVertical, X } from "lucide-react";
+import { Map, Users, Clock, MapPin, LogOut, Package, Calendar, ClipboardCheck, Layers, ChevronDown, ChevronRight, Settings, GripVertical, X, Radio, BarChart3, MessageCircle, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthContext } from "@/context/auth-context";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,10 @@ const mainNavItemsDefault = [
   { id: "routes", label: "Routes", Icon: Map, href: "/admin" },
   { id: "calendar", label: "Calendar", Icon: Calendar, href: "/admin/calendar" },
   { id: "materials", label: "Materials", Icon: Layers, href: "/admin/materials" },
+  { id: "live-tracking", label: "Live Tracking", Icon: Radio, href: "/admin/live-tracking" },
+  { id: "analytics", label: "Analytics", Icon: BarChart3, href: "/admin/analytics" },
+  { id: "templates", label: "Route Templates", Icon: Copy, href: "/admin/route-templates" },
+  { id: "messages", label: "Messages", Icon: MessageCircle, href: "/admin/messages" },
 ];
 
 const settingsNavItems = [

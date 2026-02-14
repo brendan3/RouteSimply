@@ -15,8 +15,12 @@ import {
   insertLocationMaterialSchema,
   materials,
   locationMaterials,
+  stopCompletions,
+  routes as routesTable,
+  timeEntries,
+  users,
 } from "@shared/schema";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and, gte, lte, count, desc } from "drizzle-orm";
 import OpenAI from "openai";
 import * as fs from "fs";
 import rateLimit from "express-rate-limit";
@@ -28,6 +32,11 @@ import {
   generateToken,
   hashPassword,
 } from "./auth";
+import {
+  broadcastToAdmins,
+  sendToDriver,
+  sendToClient,
+} from "./websocket";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -2621,6 +2630,667 @@ ${dataSummary}
       return res.status(500).json({ 
         message: error?.message || "Failed to process chat request" 
       });
+    }
+  });
+
+  // ============================================================
+  // TIER 2: STOP COMPLETION TRACKING
+  // ============================================================
+
+  // Get completions for a route
+  app.get("/api/stop-completions/route/:routeId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const completions = await storage.getStopCompletionsByRoute(req.params.routeId);
+      return res.json(completions);
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get completions for a driver (optionally by date)
+  app.get("/api/stop-completions/driver/:driverId", requireAuth, requireSelfOrAdmin("driverId"), async (req: Request, res: Response) => {
+    try {
+      const date = req.query.date as string | undefined;
+      const completions = await storage.getStopCompletionsByDriver(req.params.driverId, date);
+      return res.json(completions);
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Mark a stop as completed / skipped
+  app.post("/api/stop-completions", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const schema = z.object({
+        routeId: z.string().min(1),
+        stopId: z.string().min(1),
+        locationId: z.string().optional(),
+        status: z.enum(["completed", "skipped", "partial"]).default("completed"),
+        notes: z.string().optional(),
+        photoUrl: z.string().optional(),
+        lat: z.number().optional(),
+        lng: z.number().optional(),
+      });
+
+      const data = schema.parse(req.body);
+      const driverId = req.user!.userId;
+
+      const completion = await storage.createStopCompletion({
+        ...data,
+        driverId,
+        locationId: data.locationId || null,
+        completedAt: new Date(),
+      });
+
+      // Broadcast to admins via WebSocket
+      broadcastToAdmins("stop_completed", {
+        ...completion,
+        driverName: req.user!.username,
+      });
+
+      return res.status(201).json(completion);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0].message });
+      }
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Upload photo proof for a stop
+  app.post("/api/stop-completions/:id/photo", requireAuth, upload.single("photo"), async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "No photo provided" });
+      }
+
+      // Store as base64 data URL (for simplicity; production would use S3/cloud storage)
+      const base64 = req.file.buffer.toString("base64");
+      const photoUrl = `data:${req.file.mimetype};base64,${base64}`;
+
+      const completion = await storage.updateStopCompletion(req.params.id, { photoUrl });
+      return res.json(completion);
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Undo a stop completion
+  app.delete("/api/stop-completions/:id", requireAuth, async (req: Request, res: Response) => {
+    try {
+      await storage.deleteStopCompletion(req.params.id);
+      return res.json({ message: "Stop completion removed" });
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============================================================
+  // TIER 2: REAL-TIME DRIVER LOCATION TRACKING
+  // ============================================================
+
+  // Update driver's live location
+  app.post("/api/driver-locations", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const schema = z.object({
+        lat: z.number(),
+        lng: z.number(),
+        heading: z.number().optional(),
+        speed: z.number().optional(),
+      });
+
+      const data = schema.parse(req.body);
+      const driverId = req.user!.userId;
+
+      const location = await storage.upsertDriverLocation({
+        driverId,
+        lat: data.lat,
+        lng: data.lng,
+        heading: data.heading ?? null,
+        speed: data.speed ?? null,
+      });
+
+      // Broadcast to admins via WebSocket
+      broadcastToAdmins("driver_location", {
+        driverId,
+        driverName: req.user!.username,
+        lat: data.lat,
+        lng: data.lng,
+        heading: data.heading,
+        speed: data.speed,
+        updatedAt: new Date().toISOString(),
+      });
+
+      return res.json(location);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0].message });
+      }
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get all driver locations (admin only)
+  app.get("/api/driver-locations", requireAuth, requireRole("admin"), async (_req: Request, res: Response) => {
+    try {
+      const locations = await storage.getAllDriverLocations();
+      // Enrich with driver info
+      const drivers = await storage.getAllUsers();
+      const driverMap = new Map(drivers.filter(d => d.role === "driver").map(d => [d.id, d]));
+      
+      const enriched = locations.map(loc => ({
+        ...loc,
+        driver: driverMap.get(loc.driverId) ? {
+          id: driverMap.get(loc.driverId)!.id,
+          name: driverMap.get(loc.driverId)!.name,
+          color: driverMap.get(loc.driverId)!.color,
+        } : undefined,
+      }));
+
+      return res.json(enriched);
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============================================================
+  // TIER 2: MESSAGING (Two-way driver communication)
+  // ============================================================
+
+  // Get messages for the authenticated user
+  app.get("/api/messages", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const withUserId = req.query.withUser as string | undefined;
+      const limit = parseInt(req.query.limit as string) || 50;
+      const userId = req.user!.userId;
+
+      let msgs;
+      if (withUserId) {
+        msgs = await storage.getMessagesBetween(userId, withUserId, limit);
+      } else {
+        msgs = await storage.getMessagesForUser(userId, limit);
+      }
+
+      // Enrich with sender info
+      const allUsers = await storage.getAllUsers();
+      const userMap = new Map(allUsers.map(u => [u.id, { id: u.id, name: u.name, role: u.role }]));
+      
+      const enriched = msgs.map(m => ({
+        ...m,
+        sender: userMap.get(m.senderId),
+      }));
+
+      return res.json(enriched);
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Send a message
+  app.post("/api/messages", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const schema = z.object({
+        recipientId: z.string().nullable().optional(),
+        content: z.string().min(1, "Message cannot be empty"),
+        type: z.enum(["text", "image", "system"]).default("text"),
+      });
+
+      const data = schema.parse(req.body);
+      const senderId = req.user!.userId;
+
+      const message = await storage.createMessage({
+        senderId,
+        recipientId: data.recipientId || null,
+        content: data.content,
+        type: data.type,
+      });
+
+      // Send via WebSocket
+      if (data.recipientId) {
+        // Direct message
+        sendToClient(data.recipientId, "message_new", {
+          ...message,
+          senderName: req.user!.username,
+        });
+      } else {
+        // Broadcast
+        broadcastToAdmins("message_new", {
+          ...message,
+          senderName: req.user!.username,
+        });
+      }
+
+      return res.status(201).json(message);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0].message });
+      }
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Mark message as read
+  app.patch("/api/messages/:id/read", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const message = await storage.markMessageRead(req.params.id);
+      return res.json(message);
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get unread message count
+  app.get("/api/messages/unread-count", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const count = await storage.getUnreadCount(req.user!.userId);
+      return res.json({ count });
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Get conversation list (unique users the current user has messaged with)
+  app.get("/api/messages/conversations", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const userId = req.user!.userId;
+      const allMessages = await storage.getMessagesForUser(userId, 500);
+      const allUsers = await storage.getAllUsers();
+      const userMap = new Map(allUsers.map(u => [u.id, { id: u.id, name: u.name, role: u.role, color: u.color }]));
+      
+      // Group by conversation partner
+      const conversations = new Map<string, { user: any; lastMessage: any; unreadCount: number }>();
+      
+      for (const msg of allMessages) {
+        const partnerId = msg.senderId === userId ? msg.recipientId : msg.senderId;
+        if (!partnerId) continue; // skip broadcasts for conversation list
+        
+        if (!conversations.has(partnerId)) {
+          conversations.set(partnerId, {
+            user: userMap.get(partnerId),
+            lastMessage: msg,
+            unreadCount: 0,
+          });
+        }
+        
+        if (msg.recipientId === userId && !msg.readAt) {
+          const conv = conversations.get(partnerId)!;
+          conv.unreadCount++;
+        }
+      }
+
+      return res.json(Array.from(conversations.values()));
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============================================================
+  // TIER 2: ROUTE TEMPLATES
+  // ============================================================
+
+  // Get all templates
+  app.get("/api/route-templates", requireAuth, requireRole("admin"), async (_req: Request, res: Response) => {
+    try {
+      const templates = await storage.getAllRouteTemplates();
+      return res.json(templates);
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Create a template from an existing route
+  app.post("/api/route-templates", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
+    try {
+      const schema = z.object({
+        name: z.string().min(1, "Template name is required"),
+        routeId: z.string().optional(), // create from existing route
+        dayOfWeek: z.string().optional(),
+        driverId: z.string().optional(),
+        driverName: z.string().optional(),
+        stopsJson: z.array(z.any()).optional(),
+      });
+
+      const data = schema.parse(req.body);
+
+      let stopsJson = data.stopsJson || [];
+      let dayOfWeek = data.dayOfWeek;
+      let driverId = data.driverId;
+      let driverName = data.driverName;
+
+      // If creating from an existing route, copy its data
+      if (data.routeId) {
+        const route = await storage.getRoute(data.routeId);
+        if (!route) {
+          return res.status(404).json({ message: "Route not found" });
+        }
+        stopsJson = (route.stopsJson as RouteStop[]) || [];
+        dayOfWeek = dayOfWeek || route.dayOfWeek || undefined;
+        driverId = driverId || route.driverId || undefined;
+        driverName = driverName || route.driverName || undefined;
+      }
+
+      const template = await storage.createRouteTemplate({
+        name: data.name,
+        dayOfWeek: dayOfWeek || null,
+        driverId: driverId || null,
+        driverName: driverName || null,
+        stopsJson: stopsJson as RouteStop[],
+        stopCount: stopsJson.length,
+      });
+
+      return res.status(201).json(template);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0].message });
+      }
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Apply a template to create routes
+  app.post("/api/route-templates/:id/apply", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
+    try {
+      const template = await storage.getRouteTemplate(req.params.id);
+      if (!template) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+
+      const schema = z.object({
+        date: z.string().optional(),
+        dayOfWeek: z.string().optional(),
+        driverId: z.string().optional(),
+      });
+
+      const data = schema.parse(req.body);
+      const today = format(new Date(), "yyyy-MM-dd");
+
+      const route = await storage.createRoute({
+        date: data.date || today,
+        dayOfWeek: data.dayOfWeek || template.dayOfWeek || undefined,
+        driverId: data.driverId || template.driverId || undefined,
+        driverName: template.driverName,
+        stopsJson: (template.stopsJson as RouteStop[]) || [],
+        stopCount: template.stopCount,
+        status: "draft",
+      });
+
+      return res.status(201).json(route);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: error.errors[0].message });
+      }
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Update a template
+  app.patch("/api/route-templates/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
+    try {
+      const template = await storage.updateRouteTemplate(req.params.id, req.body);
+      return res.json(template);
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Delete a template
+  app.delete("/api/route-templates/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
+    try {
+      await storage.deleteRouteTemplate(req.params.id);
+      return res.json({ message: "Template deleted" });
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============================================================
+  // TIER 2: ANALYTICS DASHBOARD
+  // ============================================================
+
+  // Overall analytics summary
+  app.get("/api/analytics/summary", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
+    try {
+      const dateFrom = req.query.dateFrom as string;
+      const dateTo = req.query.dateTo as string;
+
+      // Get all routes
+      const allRoutes = await storage.getAllRoutes();
+      const filteredRoutes = allRoutes.filter(r => {
+        if (dateFrom && r.date < dateFrom) return false;
+        if (dateTo && r.date > dateTo) return false;
+        return true;
+      });
+
+      // Get all stop completions
+      const allCompletions = await storage.getAllStopCompletions();
+      const completionRouteIds = new Set(filteredRoutes.map(r => r.id));
+      const filteredCompletions = allCompletions.filter(c => completionRouteIds.has(c.routeId));
+
+      // Calculate total stops across all routes
+      let totalStops = 0;
+      filteredRoutes.forEach(r => {
+        totalStops += ((r.stopsJson as RouteStop[]) || []).length;
+      });
+
+      const completedStops = filteredCompletions.filter(c => c.status === "completed").length;
+      const skippedStops = filteredCompletions.filter(c => c.status === "skipped").length;
+
+      // Get time entries for route time analysis
+      const allTimeEntries = await storage.getAllTimeEntries();
+      const filteredEntries = allTimeEntries.filter(e => {
+        if (dateFrom && e.date < dateFrom) return false;
+        if (dateTo && e.date > dateTo) return false;
+        return e.clockInTime && e.clockOutTime;
+      });
+
+      let totalRouteMinutes = 0;
+      filteredEntries.forEach(e => {
+        if (e.clockInTime && e.clockOutTime) {
+          const diff = new Date(e.clockOutTime).getTime() - new Date(e.clockInTime).getTime();
+          totalRouteMinutes += diff / 60000;
+        }
+      });
+
+      const avgRouteTime = filteredEntries.length > 0 ? totalRouteMinutes / filteredEntries.length : 0;
+
+      return res.json({
+        totalRoutes: filteredRoutes.length,
+        totalStops,
+        completedStops,
+        skippedStops,
+        completionRate: totalStops > 0 ? (completedStops / totalStops) * 100 : 0,
+        averageRouteTime: Math.round(avgRouteTime),
+        totalDrivers: new Set(filteredRoutes.filter(r => r.driverId).map(r => r.driverId)).size,
+        totalTimeEntries: filteredEntries.length,
+      });
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Per-driver analytics
+  app.get("/api/analytics/drivers", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
+    try {
+      const dateFrom = req.query.dateFrom as string;
+      const dateTo = req.query.dateTo as string;
+
+      const allRoutes = await storage.getAllRoutes();
+      const allCompletions = await storage.getAllStopCompletions();
+      const drivers = (await storage.getAllUsers()).filter(u => u.role === "driver");
+      const allTimeEntries = await storage.getAllTimeEntries();
+
+      const driverAnalytics = drivers.map(driver => {
+        const driverRoutes = allRoutes.filter(r => {
+          if (r.driverId !== driver.id) return false;
+          if (dateFrom && r.date < dateFrom) return false;
+          if (dateTo && r.date > dateTo) return false;
+          return true;
+        });
+
+        const routeIds = new Set(driverRoutes.map(r => r.id));
+        const driverCompletions = allCompletions.filter(c => routeIds.has(c.routeId));
+
+        let totalStops = 0;
+        driverRoutes.forEach(r => {
+          totalStops += ((r.stopsJson as RouteStop[]) || []).length;
+        });
+
+        const completedStops = driverCompletions.filter(c => c.status === "completed").length;
+
+        // Calculate average route time from time entries
+        const driverEntries = allTimeEntries.filter(e => {
+          if (e.driverId !== driver.id) return false;
+          if (dateFrom && e.date < dateFrom) return false;
+          if (dateTo && e.date > dateTo) return false;
+          return e.clockInTime && e.clockOutTime;
+        });
+
+        let totalMinutes = 0;
+        driverEntries.forEach(e => {
+          if (e.clockInTime && e.clockOutTime) {
+            totalMinutes += (new Date(e.clockOutTime).getTime() - new Date(e.clockInTime).getTime()) / 60000;
+          }
+        });
+
+        return {
+          driverId: driver.id,
+          driverName: driver.name,
+          driverColor: driver.color,
+          totalRoutes: driverRoutes.length,
+          totalStops,
+          completedStops,
+          completionRate: totalStops > 0 ? Math.round((completedStops / totalStops) * 100) : 0,
+          averageRouteTime: driverEntries.length > 0 ? Math.round(totalMinutes / driverEntries.length) : 0,
+        };
+      });
+
+      return res.json(driverAnalytics);
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // Daily completion trend
+  app.get("/api/analytics/daily-trend", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
+    try {
+      const days = parseInt(req.query.days as string) || 30;
+      const allCompletions = await storage.getAllStopCompletions();
+      const allRoutes = await storage.getAllRoutes();
+
+      // Group by date
+      const dateMap = new Map<string, { completed: number; skipped: number; totalStops: number; routes: number }>();
+      
+      // Initialize last N days
+      for (let i = 0; i < days; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = format(d, "yyyy-MM-dd");
+        dateMap.set(dateStr, { completed: 0, skipped: 0, totalStops: 0, routes: 0 });
+      }
+
+      // Count routes and stops by date
+      allRoutes.forEach(r => {
+        const entry = dateMap.get(r.date);
+        if (entry) {
+          entry.routes++;
+          entry.totalStops += ((r.stopsJson as RouteStop[]) || []).length;
+        }
+      });
+
+      // Count completions by date
+      allCompletions.forEach(c => {
+        if (!c.completedAt) return;
+        const dateStr = format(new Date(c.completedAt), "yyyy-MM-dd");
+        const entry = dateMap.get(dateStr);
+        if (entry) {
+          if (c.status === "completed") entry.completed++;
+          else if (c.status === "skipped") entry.skipped++;
+        }
+      });
+
+      const trend = Array.from(dateMap.entries())
+        .map(([date, data]) => ({ date, ...data }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      return res.json(trend);
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============================================================
+  // TIER 2: WEBSOCKET CONNECTION INFO
+  // ============================================================
+
+  app.get("/api/ws/status", requireAuth, requireRole("admin"), async (_req: Request, res: Response) => {
+    try {
+      const { getConnectedClients } = await import("./websocket");
+      const status = getConnectedClients();
+      return res.json(status);
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============================================================
+  // TIER 2: CUSTOMER PORTAL (public - no auth required)
+  // ============================================================
+
+  app.get("/api/customer/lookup", async (req: Request, res: Response) => {
+    try {
+      const query = (req.query.q as string || "").trim().toLowerCase();
+      if (!query || query.length < 2) {
+        return res.status(400).json({ message: "Search query must be at least 2 characters" });
+      }
+
+      // Search locations by customer name or address
+      const allLocations = await storage.getAllLocations();
+      const match = allLocations.find(loc =>
+        loc.customerName.toLowerCase().includes(query) ||
+        loc.address.toLowerCase().includes(query)
+      );
+
+      if (!match) {
+        return res.status(404).json({ message: "No customer found matching that query" });
+      }
+
+      // Find routes that include this location
+      const allRoutes = await storage.getAllRoutes();
+      const customerRoutes = allRoutes
+        .filter(r => {
+          const stops = (r.stopsJson as RouteStop[]) || [];
+          return stops.some(s => s.locationId === match.id);
+        })
+        .map(r => {
+          const stops = (r.stopsJson as RouteStop[]) || [];
+          const stop = stops.find(s => s.locationId === match.id);
+          return {
+            date: r.date,
+            dayOfWeek: r.dayOfWeek,
+            driverName: r.driverName,
+            estimatedTime: r.estimatedTime,
+            stopSequence: stop ? stop.sequence : 0,
+            status: r.status,
+          };
+        })
+        .sort((a, b) => a.date.localeCompare(b.date));
+
+      // Find the next upcoming delivery
+      const today = format(new Date(), "yyyy-MM-dd");
+      const upcoming = customerRoutes.filter(r => r.date >= today && (r.status === "published" || r.status === "assigned"));
+      const nextDelivery = upcoming[0] || null;
+
+      return res.json({
+        customer: {
+          name: match.customerName,
+          address: match.address,
+          serviceType: match.serviceType,
+        },
+        upcomingRoutes: upcoming.slice(0, 10),
+        nextDelivery,
+      });
+    } catch (error: any) {
+      return res.status(500).json({ message: error.message });
     }
   });
 

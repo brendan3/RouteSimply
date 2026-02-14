@@ -12,6 +12,7 @@ export const users = pgTable("users", {
   username: text("username").notNull().unique(),
   password: text("password").notNull(),
   color: text("color"), // hex color code for driver name display
+  organizationId: varchar("organization_id").references(() => organizations.id),
 });
 
 // Locations table (delivery stops)
@@ -94,17 +95,91 @@ export const locationMaterials = pgTable("location_materials", {
   daysOfWeek: text("days_of_week").array(), // For future day-specific support, null means all days
 });
 
+// ============ TIER 2 TABLES ============
+
+// Organizations table (multi-tenancy)
+export const organizations = pgTable("organizations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(), // URL-friendly identifier
+  logoUrl: text("logo_url"),
+  primaryColor: text("primary_color").default("#3b82f6"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Stop completions - tracks individual stop completion by drivers
+export const stopCompletions = pgTable("stop_completions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  routeId: varchar("route_id").notNull().references(() => routes.id, { onDelete: "cascade" }),
+  stopId: varchar("stop_id").notNull(), // references the stop within the route's stopsJson
+  locationId: varchar("location_id").references(() => locations.id),
+  driverId: varchar("driver_id").notNull().references(() => users.id),
+  status: text("status").notNull().default("completed"), // 'completed', 'skipped', 'partial'
+  completedAt: timestamp("completed_at").default(sql`CURRENT_TIMESTAMP`),
+  notes: text("notes"),
+  photoUrl: text("photo_url"),
+  lat: real("lat"),
+  lng: real("lng"),
+});
+
+// Driver locations - real-time GPS tracking
+export const driverLocations = pgTable("driver_locations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  driverId: varchar("driver_id").notNull().references(() => users.id).unique(),
+  lat: real("lat").notNull(),
+  lng: real("lng").notNull(),
+  heading: real("heading"),
+  speed: real("speed"),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Messages - two-way communication between admin and drivers
+export const messages = pgTable("messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  senderId: varchar("sender_id").notNull().references(() => users.id),
+  recipientId: varchar("recipient_id").references(() => users.id), // null = broadcast to all drivers
+  content: text("content").notNull(),
+  type: text("type").notNull().default("text"), // 'text', 'image', 'system'
+  readAt: timestamp("read_at"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
+});
+
+// Route templates - save and reuse optimized route configurations
+export const routeTemplates = pgTable("route_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  dayOfWeek: text("day_of_week"),
+  driverId: varchar("driver_id").references(() => users.id),
+  driverName: text("driver_name"),
+  stopsJson: json("stops_json").$type<RouteStop[]>().default([]),
+  stopCount: integer("stop_count").default(0),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`),
+});
+
 // Relations
-export const usersRelations = relations(users, ({ many }) => ({
+export const usersRelations = relations(users, ({ one, many }) => ({
   routes: many(routes),
   timeEntries: many(timeEntries),
+  stopCompletions: many(stopCompletions),
+  sentMessages: many(messages, { relationName: "sender" }),
+  receivedMessages: many(messages, { relationName: "recipient" }),
+  driverLocation: one(driverLocations, {
+    fields: [users.id],
+    references: [driverLocations.driverId],
+  }),
+  organization: one(organizations, {
+    fields: [users.organizationId],
+    references: [organizations.id],
+  }),
 }));
 
-export const routesRelations = relations(routes, ({ one }) => ({
+export const routesRelations = relations(routes, ({ one, many }) => ({
   driver: one(users, {
     fields: [routes.driverId],
     references: [users.id],
   }),
+  stopCompletions: many(stopCompletions),
 }));
 
 export const timeEntriesRelations = relations(timeEntries, ({ one }) => ({
@@ -139,6 +214,53 @@ export const locationMaterialsRelations = relations(locationMaterials, ({ one })
 export const locationsRelations = relations(locations, ({ many }) => ({
   locationMaterials: many(locationMaterials),
   routeConfirmations: many(routeConfirmations),
+  stopCompletions: many(stopCompletions),
+}));
+
+export const organizationsRelations = relations(organizations, ({ many }) => ({
+  users: many(users),
+}));
+
+export const stopCompletionsRelations = relations(stopCompletions, ({ one }) => ({
+  route: one(routes, {
+    fields: [stopCompletions.routeId],
+    references: [routes.id],
+  }),
+  location: one(locations, {
+    fields: [stopCompletions.locationId],
+    references: [locations.id],
+  }),
+  driver: one(users, {
+    fields: [stopCompletions.driverId],
+    references: [users.id],
+  }),
+}));
+
+export const driverLocationsRelations = relations(driverLocations, ({ one }) => ({
+  driver: one(users, {
+    fields: [driverLocations.driverId],
+    references: [users.id],
+  }),
+}));
+
+export const messagesRelations = relations(messages, ({ one }) => ({
+  sender: one(users, {
+    fields: [messages.senderId],
+    references: [users.id],
+    relationName: "sender",
+  }),
+  recipient: one(users, {
+    fields: [messages.recipientId],
+    references: [users.id],
+    relationName: "recipient",
+  }),
+}));
+
+export const routeTemplatesRelations = relations(routeTemplates, ({ one }) => ({
+  driver: one(users, {
+    fields: [routeTemplates.driverId],
+    references: [users.id],
+  }),
 }));
 
 // Types for route stops
@@ -173,6 +295,11 @@ export const insertWorkLocationSchema = createInsertSchema(workLocations).omit({
 export const insertRouteConfirmationSchema = createInsertSchema(routeConfirmations).omit({ id: true });
 export const insertMaterialSchema = createInsertSchema(materials).omit({ id: true });
 export const insertLocationMaterialSchema = createInsertSchema(locationMaterials).omit({ id: true });
+export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true });
+export const insertStopCompletionSchema = createInsertSchema(stopCompletions).omit({ id: true });
+export const insertDriverLocationSchema = createInsertSchema(driverLocations).omit({ id: true });
+export const insertMessageSchema = createInsertSchema(messages).omit({ id: true });
+export const insertRouteTemplateSchema = createInsertSchema(routeTemplates).omit({ id: true });
 
 // Types
 export type InsertUser = z.infer<typeof insertUserSchema>;
@@ -198,6 +325,21 @@ export type Material = typeof materials.$inferSelect;
 
 export type InsertLocationMaterial = z.infer<typeof insertLocationMaterialSchema>;
 export type LocationMaterial = typeof locationMaterials.$inferSelect;
+
+export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
+export type Organization = typeof organizations.$inferSelect;
+
+export type InsertStopCompletion = z.infer<typeof insertStopCompletionSchema>;
+export type StopCompletion = typeof stopCompletions.$inferSelect;
+
+export type InsertDriverLocation = z.infer<typeof insertDriverLocationSchema>;
+export type DriverLocation = typeof driverLocations.$inferSelect;
+
+export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type Message = typeof messages.$inferSelect;
+
+export type InsertRouteTemplate = z.infer<typeof insertRouteTemplateSchema>;
+export type RouteTemplate = typeof routeTemplates.$inferSelect;
 
 // Extended type for location materials with material details
 export interface LocationMaterialWithDetails extends LocationMaterial {
@@ -229,4 +371,54 @@ export interface ClockActionResult {
   message: string;
   entry?: TimeEntry;
   distance?: number;
+}
+
+// Extended types for new features
+export interface StopCompletionWithDetails extends StopCompletion {
+  driver?: User;
+  location?: Location;
+}
+
+export interface MessageWithSender extends Message {
+  sender?: User;
+}
+
+export interface DriverLocationWithDriver extends DriverLocation {
+  driver?: User;
+}
+
+// Analytics types
+export interface RouteAnalytics {
+  totalRoutes: number;
+  totalStops: number;
+  completedStops: number;
+  skippedStops: number;
+  completionRate: number;
+  averageCompletionTime: number; // minutes from route start to last stop
+}
+
+export interface DriverAnalytics {
+  driverId: string;
+  driverName: string;
+  totalRoutes: number;
+  totalStops: number;
+  completedStops: number;
+  completionRate: number;
+  averageRouteTime: number;
+}
+
+// WebSocket event types
+export type WSEventType = 
+  | "driver_location"
+  | "stop_completed"
+  | "route_updated"
+  | "message_new"
+  | "message_read"
+  | "driver_connected"
+  | "driver_disconnected";
+
+export interface WSMessage {
+  type: WSEventType;
+  payload: unknown;
+  timestamp: string;
 }

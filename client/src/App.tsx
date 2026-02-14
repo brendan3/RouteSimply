@@ -15,7 +15,12 @@ import AdminLocationsPage from "@/pages/admin/locations";
 import AdminConfirmRoutePage from "@/pages/admin/confirm-route";
 import AdminBuildRoutesPage from "@/pages/admin/build-routes";
 import AdminMaterialsPage from "@/pages/admin/materials";
+import AdminAnalyticsPage from "@/pages/admin/analytics";
+import AdminLiveTrackingPage from "@/pages/admin/live-tracking";
+import AdminMessagingPage from "@/pages/admin/messaging";
+import AdminRouteTemplatesPage from "@/pages/admin/route-templates";
 import DriverPage from "@/pages/driver/index";
+import CustomerPortalPage from "@/pages/customer/portal";
 import { LoadingSpinner } from "@/components/common/loading-spinner";
 
 function ProtectedRoute({ 
@@ -143,10 +148,39 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/admin/analytics">
+        <ProtectedRoute requiredRole="admin">
+          <AdminAnalyticsPage />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/live-tracking">
+        <ProtectedRoute requiredRole="admin">
+          <AdminLiveTrackingPage />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/messages">
+        <ProtectedRoute requiredRole="admin">
+          <AdminMessagingPage />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/route-templates">
+        <ProtectedRoute requiredRole="admin">
+          <AdminRouteTemplatesPage />
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/driver">
         <ProtectedRoute requiredRole="driver">
           <DriverPage />
         </ProtectedRoute>
+      </Route>
+
+      {/* Public customer portal - no auth required */}
+      <Route path="/customer">
+        <CustomerPortalPage />
       </Route>
 
       <Route component={NotFound} />

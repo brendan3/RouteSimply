@@ -7,6 +7,11 @@ import {
   routeConfirmations,
   materials,
   locationMaterials,
+  stopCompletions,
+  driverLocations,
+  messages,
+  routeTemplates,
+  organizations,
   type User,
   type InsertUser,
   type Location,
@@ -24,9 +29,19 @@ import {
   type LocationMaterial,
   type InsertLocationMaterial,
   type LocationMaterialWithDetails,
+  type StopCompletion,
+  type InsertStopCompletion,
+  type DriverLocation,
+  type InsertDriverLocation,
+  type Message,
+  type InsertMessage,
+  type RouteTemplate,
+  type InsertRouteTemplate,
+  type Organization,
+  type InsertOrganization,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, or, isNull, gte, lte, count, sql } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -90,6 +105,39 @@ export interface IStorage {
   updateLocationMaterial(id: string, data: Partial<InsertLocationMaterial>): Promise<LocationMaterial>;
   removeLocationMaterial(id: string): Promise<void>;
   removeAllLocationMaterials(locationId: string): Promise<void>;
+
+  // Stop Completions
+  getStopCompletion(id: string): Promise<StopCompletion | undefined>;
+  getStopCompletionsByRoute(routeId: string): Promise<StopCompletion[]>;
+  getStopCompletionsByDriver(driverId: string, date?: string): Promise<StopCompletion[]>;
+  createStopCompletion(data: InsertStopCompletion): Promise<StopCompletion>;
+  updateStopCompletion(id: string, data: Partial<InsertStopCompletion>): Promise<StopCompletion>;
+  deleteStopCompletion(id: string): Promise<void>;
+  getAllStopCompletions(): Promise<StopCompletion[]>;
+
+  // Driver Locations
+  getDriverLocation(driverId: string): Promise<DriverLocation | undefined>;
+  getAllDriverLocations(): Promise<DriverLocation[]>;
+  upsertDriverLocation(data: InsertDriverLocation): Promise<DriverLocation>;
+
+  // Messages
+  getMessage(id: string): Promise<Message | undefined>;
+  getMessagesBetween(userId1: string, userId2: string, limit?: number): Promise<Message[]>;
+  getMessagesForUser(userId: string, limit?: number): Promise<Message[]>;
+  createMessage(data: InsertMessage): Promise<Message>;
+  markMessageRead(id: string): Promise<Message>;
+  getUnreadCount(userId: string): Promise<number>;
+
+  // Route Templates
+  getRouteTemplate(id: string): Promise<RouteTemplate | undefined>;
+  getAllRouteTemplates(): Promise<RouteTemplate[]>;
+  createRouteTemplate(data: InsertRouteTemplate): Promise<RouteTemplate>;
+  updateRouteTemplate(id: string, data: Partial<InsertRouteTemplate>): Promise<RouteTemplate>;
+  deleteRouteTemplate(id: string): Promise<void>;
+
+  // Organizations
+  getOrganization(id: string): Promise<Organization | undefined>;
+  createOrganization(data: InsertOrganization): Promise<Organization>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -356,6 +404,168 @@ export class DatabaseStorage implements IStorage {
 
   async removeAllLocationMaterials(locationId: string): Promise<void> {
     await db.delete(locationMaterials).where(eq(locationMaterials.locationId, locationId));
+  }
+
+  // ============ Stop Completions ============
+
+  async getStopCompletion(id: string): Promise<StopCompletion | undefined> {
+    const [sc] = await db.select().from(stopCompletions).where(eq(stopCompletions.id, id));
+    return sc || undefined;
+  }
+
+  async getStopCompletionsByRoute(routeId: string): Promise<StopCompletion[]> {
+    return db.select().from(stopCompletions)
+      .where(eq(stopCompletions.routeId, routeId))
+      .orderBy(stopCompletions.completedAt);
+  }
+
+  async getStopCompletionsByDriver(driverId: string, date?: string): Promise<StopCompletion[]> {
+    if (date) {
+      const startOfDay = new Date(`${date}T00:00:00.000Z`);
+      const endOfDay = new Date(`${date}T23:59:59.999Z`);
+      return db.select().from(stopCompletions)
+        .where(and(
+          eq(stopCompletions.driverId, driverId),
+          gte(stopCompletions.completedAt, startOfDay),
+          lte(stopCompletions.completedAt, endOfDay),
+        ))
+        .orderBy(stopCompletions.completedAt);
+    }
+    return db.select().from(stopCompletions)
+      .where(eq(stopCompletions.driverId, driverId))
+      .orderBy(desc(stopCompletions.completedAt));
+  }
+
+  async createStopCompletion(data: InsertStopCompletion): Promise<StopCompletion> {
+    const [sc] = await db.insert(stopCompletions).values(data).returning();
+    return sc;
+  }
+
+  async updateStopCompletion(id: string, data: Partial<InsertStopCompletion>): Promise<StopCompletion> {
+    const [sc] = await db.update(stopCompletions).set(data).where(eq(stopCompletions.id, id)).returning();
+    return sc;
+  }
+
+  async deleteStopCompletion(id: string): Promise<void> {
+    await db.delete(stopCompletions).where(eq(stopCompletions.id, id));
+  }
+
+  async getAllStopCompletions(): Promise<StopCompletion[]> {
+    return db.select().from(stopCompletions).orderBy(desc(stopCompletions.completedAt));
+  }
+
+  // ============ Driver Locations ============
+
+  async getDriverLocation(driverId: string): Promise<DriverLocation | undefined> {
+    const [loc] = await db.select().from(driverLocations).where(eq(driverLocations.driverId, driverId));
+    return loc || undefined;
+  }
+
+  async getAllDriverLocations(): Promise<DriverLocation[]> {
+    return db.select().from(driverLocations);
+  }
+
+  async upsertDriverLocation(data: InsertDriverLocation): Promise<DriverLocation> {
+    const existing = await this.getDriverLocation(data.driverId);
+    if (existing) {
+      const [updated] = await db.update(driverLocations)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(driverLocations.driverId, data.driverId))
+        .returning();
+      return updated;
+    }
+    const [created] = await db.insert(driverLocations).values(data).returning();
+    return created;
+  }
+
+  // ============ Messages ============
+
+  async getMessage(id: string): Promise<Message | undefined> {
+    const [msg] = await db.select().from(messages).where(eq(messages.id, id));
+    return msg || undefined;
+  }
+
+  async getMessagesBetween(userId1: string, userId2: string, limit = 50): Promise<Message[]> {
+    return db.select().from(messages)
+      .where(or(
+        and(eq(messages.senderId, userId1), eq(messages.recipientId, userId2)),
+        and(eq(messages.senderId, userId2), eq(messages.recipientId, userId1)),
+      ))
+      .orderBy(desc(messages.createdAt))
+      .limit(limit);
+  }
+
+  async getMessagesForUser(userId: string, limit = 100): Promise<Message[]> {
+    return db.select().from(messages)
+      .where(or(
+        eq(messages.senderId, userId),
+        eq(messages.recipientId, userId),
+        isNull(messages.recipientId), // broadcasts
+      ))
+      .orderBy(desc(messages.createdAt))
+      .limit(limit);
+  }
+
+  async createMessage(data: InsertMessage): Promise<Message> {
+    const [msg] = await db.insert(messages).values(data).returning();
+    return msg;
+  }
+
+  async markMessageRead(id: string): Promise<Message> {
+    const [msg] = await db.update(messages)
+      .set({ readAt: new Date() })
+      .where(eq(messages.id, id))
+      .returning();
+    return msg;
+  }
+
+  async getUnreadCount(userId: string): Promise<number> {
+    const result = await db.select({ count: count() }).from(messages)
+      .where(and(
+        or(eq(messages.recipientId, userId), isNull(messages.recipientId)),
+        isNull(messages.readAt),
+      ));
+    return result[0]?.count || 0;
+  }
+
+  // ============ Route Templates ============
+
+  async getRouteTemplate(id: string): Promise<RouteTemplate | undefined> {
+    const [tmpl] = await db.select().from(routeTemplates).where(eq(routeTemplates.id, id));
+    return tmpl || undefined;
+  }
+
+  async getAllRouteTemplates(): Promise<RouteTemplate[]> {
+    return db.select().from(routeTemplates).orderBy(routeTemplates.name);
+  }
+
+  async createRouteTemplate(data: InsertRouteTemplate): Promise<RouteTemplate> {
+    const [tmpl] = await db.insert(routeTemplates).values(data).returning();
+    return tmpl;
+  }
+
+  async updateRouteTemplate(id: string, data: Partial<InsertRouteTemplate>): Promise<RouteTemplate> {
+    const [tmpl] = await db.update(routeTemplates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(routeTemplates.id, id))
+      .returning();
+    return tmpl;
+  }
+
+  async deleteRouteTemplate(id: string): Promise<void> {
+    await db.delete(routeTemplates).where(eq(routeTemplates.id, id));
+  }
+
+  // ============ Organizations ============
+
+  async getOrganization(id: string): Promise<Organization | undefined> {
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, id));
+    return org || undefined;
+  }
+
+  async createOrganization(data: InsertOrganization): Promise<Organization> {
+    const [org] = await db.insert(organizations).values(data).returning();
+    return org;
   }
 }
 
