@@ -69,8 +69,8 @@ function DraggableRouteCard({
   const rawStops = (route.stopsJson || []) as RouteStop[];
   const stops = rawStops.filter(stop => stop.id && stop.customerName && stop.address);
   const deliveryStops = stops.filter(stop => 
-    !stop.customerName?.startsWith("Start: Warehouse") && 
-    !stop.customerName?.startsWith("End: Warehouse")
+    !stop.customerName?.startsWith("Start: ") && 
+    !stop.customerName?.startsWith("End: ")
   );
 
   return (

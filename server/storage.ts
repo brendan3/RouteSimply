@@ -83,7 +83,10 @@ export interface IStorage {
   getWorkLocation(id: string): Promise<WorkLocation | undefined>;
   getAllWorkLocations(): Promise<WorkLocation[]>;
   createWorkLocation(location: InsertWorkLocation): Promise<WorkLocation>;
+  updateWorkLocation(id: string, data: Partial<InsertWorkLocation>): Promise<WorkLocation>;
   deleteWorkLocation(id: string): Promise<void>;
+  setStartingPoint(id: string): Promise<void>;
+  getStartingPoint(): Promise<WorkLocation | undefined>;
 
   // Route Confirmations
   getRouteConfirmationsByDate(scheduledDate: string): Promise<RouteConfirmation[]>;
@@ -286,8 +289,25 @@ export class DatabaseStorage implements IStorage {
     return location;
   }
 
+  async updateWorkLocation(id: string, data: Partial<InsertWorkLocation>): Promise<WorkLocation> {
+    const [location] = await db.update(workLocations).set(data as any).where(eq(workLocations.id, id)).returning();
+    return location;
+  }
+
   async deleteWorkLocation(id: string): Promise<void> {
     await db.delete(workLocations).where(eq(workLocations.id, id));
+  }
+
+  async setStartingPoint(id: string): Promise<void> {
+    // Clear all existing starting points
+    await db.update(workLocations).set({ isStartingPoint: false }).where(eq(workLocations.isStartingPoint, true));
+    // Set the new one
+    await db.update(workLocations).set({ isStartingPoint: true }).where(eq(workLocations.id, id));
+  }
+
+  async getStartingPoint(): Promise<WorkLocation | undefined> {
+    const [loc] = await db.select().from(workLocations).where(eq(workLocations.isStartingPoint, true));
+    return loc || undefined;
   }
 
   // Route Confirmations

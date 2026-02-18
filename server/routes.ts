@@ -848,18 +848,18 @@ export async function registerRoutes(
   ): Promise<Route[]> {
     const createdRoutes: Route[] = [];
     
-    // Get warehouse location for start/end of routes
-    const workLocations = await storage.getAllWorkLocations();
-    const warehouse = workLocations.find(wl => wl.name.toLowerCase() === 'warehouse');
+    // Get starting point location (designated starting point > warehouse name > fallback)
+    const startingPoint = await storage.getStartingPoint();
+    const warehouse = startingPoint || (await storage.getAllWorkLocations()).find(wl => wl.name.toLowerCase() === 'warehouse');
     
-    // Create warehouse stop helper (default to new warehouse address if not found in database)
+    // Create warehouse/starting-point stop helper
     const createWarehouseStop = (sequence: number, isStart: boolean): RouteStop => ({
       id: randomUUID(),
       locationId: warehouse?.id || 'warehouse',
       address: warehouse?.address || '3700 Pennington Ave Baltimore, MD 21226',
-      customerName: isStart ? 'Start: Warehouse' : 'End: Warehouse',
+      customerName: isStart ? `Start: ${warehouse?.name || 'Warehouse'}` : `End: ${warehouse?.name || 'Warehouse'}`,
       serviceType: undefined,
-      notes: isStart ? 'Load truck and begin route' : 'Return to warehouse',
+      notes: isStart ? 'Load truck and begin route' : 'Return to starting point',
       lat: warehouse?.lat || 39.23128,
       lng: warehouse?.lng || -76.58923,
       sequence,
@@ -892,26 +892,35 @@ export async function registerRoutes(
           sequence: index + 2, // Start at 2, warehouse is 1
         }));
 
-        // Try Google Routes API optimization for better results
+        // Add warehouse at start and end first, so Google API calculates full route distance
+        const warehouseStart = createWarehouseStop(1, true);
+        const warehouseEnd = createWarehouseStop(deliveryStops.length + 2, false);
+
+        // Build full route: warehouse -> delivery stops -> warehouse
+        let fullRouteForOptimization: RouteStop[] = [warehouseStart, ...deliveryStops, warehouseEnd];
+
+        // Try Google Routes API optimization (includes warehouse as origin/destination for accurate totals)
         let totalDistance: number | null = null;
         let estimatedTime: number | null = null;
-        const googleResult = await optimizeRouteWithGoogle(deliveryStops);
+        const googleResult = await optimizeRouteWithGoogle(fullRouteForOptimization);
         
         if (googleResult) {
-          deliveryStops = googleResult.optimizedStops;
-          // Re-sequence after optimization
+          // Google reordered the intermediates; extract the optimized delivery stops
+          const optimized = googleResult.optimizedStops;
+          // First stop is warehouse start, last is warehouse end, middle are reordered delivery stops
+          deliveryStops = optimized.slice(1, -1);
           deliveryStops.forEach((stop, idx) => {
             stop.sequence = idx + 2;
           });
           totalDistance = googleResult.totalDistanceKm;
           estimatedTime = googleResult.estimatedTimeMinutes;
-          console.log(`Route for ${dayOfWeek} optimized with Google: ${deliveryStops.length} stops, ${totalDistance}km, ${estimatedTime} min`);
+          console.log(`Route for ${dayOfWeek} optimized with Google (full route): ${deliveryStops.length} stops, ${totalDistance}km, ${estimatedTime} min`);
         }
 
-        // Add warehouse at start and end
-        const warehouseStart = createWarehouseStop(1, true);
-        const warehouseEnd = createWarehouseStop(deliveryStops.length + 2, false);
-        const stops = [warehouseStart, ...deliveryStops, warehouseEnd];
+        // Rebuild final stops array with correct sequences
+        const finalWarehouseStart = createWarehouseStop(1, true);
+        const finalWarehouseEnd = createWarehouseStop(deliveryStops.length + 2, false);
+        const stops = [finalWarehouseStart, ...deliveryStops, finalWarehouseEnd];
 
         // Calculate distance using full route including warehouse if Google didn't provide it
         if (!googleResult) {
@@ -961,16 +970,22 @@ export async function registerRoutes(
           sequence: index + 2, // Start at 2, warehouse is 1
         }));
 
+        // Add warehouse at start and end first so Google calculates full route
+        const warehouseStart = createWarehouseStop(1, true);
+        const warehouseEnd = createWarehouseStop(deliveryStops.length + 2, false);
+        let fullRouteForOptimization: RouteStop[] = [warehouseStart, ...deliveryStops, warehouseEnd];
+
         let totalDistance: number | null = null;
         let estimatedTime: number | null = null;
         let googleOptimized = false;
-        const stopsHaveCoords = deliveryStops.every(s => s.lat != null && s.lng != null);
+        const stopsHaveCoords = deliveryStops.every(s => s.lat != null && s.lng != null) &&
+          warehouseStart.lat != null && warehouseStart.lng != null;
         
         if (stopsHaveCoords) {
-          const googleResult = await optimizeRouteWithGoogle(deliveryStops);
+          const googleResult = await optimizeRouteWithGoogle(fullRouteForOptimization);
           if (googleResult) {
-            deliveryStops = googleResult.optimizedStops;
-            // Re-sequence after optimization
+            const optimized = googleResult.optimizedStops;
+            deliveryStops = optimized.slice(1, -1);
             deliveryStops.forEach((stop, idx) => {
               stop.sequence = idx + 2;
             });
@@ -980,10 +995,10 @@ export async function registerRoutes(
           }
         }
 
-        // Add warehouse at start and end
-        const warehouseStart = createWarehouseStop(1, true);
-        const warehouseEnd = createWarehouseStop(deliveryStops.length + 2, false);
-        const stops = [warehouseStart, ...deliveryStops, warehouseEnd];
+        // Rebuild final stops array
+        const finalWarehouseStart = createWarehouseStop(1, true);
+        const finalWarehouseEnd = createWarehouseStop(deliveryStops.length + 2, false);
+        const stops = [finalWarehouseStart, ...deliveryStops, finalWarehouseEnd];
 
         // Calculate distance using full route including warehouse if Google didn't provide it
         if (!googleOptimized && stopsHaveCoords) {
@@ -1116,16 +1131,16 @@ export async function registerRoutes(
       const { routes: routeData } = validation.data;
       const createdRoutes: Route[] = [];
       
-      // Get warehouse location for start/end of routes
-      const workLocations = await storage.getAllWorkLocations();
-      const warehouse = workLocations.find(wl => wl.name.toLowerCase() === 'warehouse');
+      // Get starting point location (designated starting point > warehouse name > fallback)
+      const startingPoint = await storage.getStartingPoint();
+      const warehouse = startingPoint || (await storage.getAllWorkLocations()).find(wl => wl.name.toLowerCase() === 'warehouse');
       
-      // Create warehouse stop helper
+      // Create warehouse/starting-point stop helper
       const createWarehouseStop = (sequence: number, isStart: boolean): RouteStop => ({
         id: randomUUID(),
         locationId: warehouse?.id || 'warehouse',
         address: warehouse?.address || '3700 Pennington Ave Baltimore, MD 21226',
-        customerName: isStart ? 'Start: Warehouse' : 'End: Warehouse',
+        customerName: isStart ? `Start: ${warehouse?.name || 'Warehouse'}` : `End: ${warehouse?.name || 'Warehouse'}`,
         serviceType: undefined,
         notes: undefined,
         lat: warehouse?.lat,
@@ -1717,6 +1732,39 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Delete work location error:", error);
       return res.status(500).json({ message: "Failed to delete work location" });
+    }
+  });
+
+  // Set a work location as the route starting point
+  app.post("/api/work-locations/:id/set-starting-point", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
+    try {
+      await storage.setStartingPoint(req.params.id);
+      return res.json({ message: "Starting point updated" });
+    } catch (error) {
+      console.error("Set starting point error:", error);
+      return res.status(500).json({ message: "Failed to set starting point" });
+    }
+  });
+
+  // Get current starting point
+  app.get("/api/work-locations/starting-point", requireAuth, async (_req: Request, res: Response) => {
+    try {
+      const startingPoint = await storage.getStartingPoint();
+      return res.json(startingPoint || null);
+    } catch (error) {
+      console.error("Get starting point error:", error);
+      return res.status(500).json({ message: "Failed to get starting point" });
+    }
+  });
+
+  // Update a work location
+  app.patch("/api/work-locations/:id", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
+    try {
+      const location = await storage.updateWorkLocation(req.params.id, req.body);
+      return res.json(location);
+    } catch (error) {
+      console.error("Update work location error:", error);
+      return res.status(500).json({ message: "Failed to update work location" });
     }
   });
 
@@ -2419,9 +2467,9 @@ export async function registerRoutes(
       const generateGoogleMapsLink = (stops: RouteStop[]) => {
         if (!stops || stops.length === 0) return "No stops";
         
-        // Get warehouse from work locations (dynamic, not hardcoded)
-        const warehouseLocation = workLocations.find(wl => wl.name.toLowerCase().includes('warehouse'));
-        const warehouseAddress = warehouseLocation?.address || "3700 Pennington Ave Baltimore, MD 21226";
+        // Get starting point from work locations (designated starting point > warehouse name > fallback)
+        const startingPt = workLocations.find(wl => wl.isStartingPoint) || workLocations.find(wl => wl.name.toLowerCase().includes('warehouse'));
+        const warehouseAddress = startingPt?.address || "3700 Pennington Ave Baltimore, MD 21226";
         const origin = encodeURIComponent(warehouseAddress);
         const destination = encodeURIComponent(warehouseAddress);
         

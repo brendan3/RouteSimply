@@ -67,6 +67,7 @@ export const workLocations = pgTable("work_locations", {
   lat: real("lat").notNull(),
   lng: real("lng").notNull(),
   radiusMeters: integer("radius_meters").notNull().default(100),
+  isStartingPoint: boolean("is_starting_point").notNull().default(false),
 });
 
 // Route confirmations - tracks date-specific stop inclusions/exclusions

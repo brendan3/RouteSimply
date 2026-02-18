@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -16,7 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { MapPin, Plus, Trash2 } from "lucide-react";
+import { MapPin, Plus, Trash2, Navigation } from "lucide-react";
 import type { WorkLocation } from "@shared/schema";
 
 export default function AdminLocationsPage() {
@@ -74,6 +75,23 @@ export default function AdminLocationsPage() {
     },
   });
 
+  const setStartingPointMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest("POST", `/api/work-locations/${id}/set-starting-point`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/work-locations"] });
+      toast({ title: "Starting point updated", description: "Routes will now start and end at this location." });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to set starting point",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleCreate = () => {
     if (!newLocation.name || !newLocation.address) {
       toast({
@@ -93,7 +111,7 @@ export default function AdminLocationsPage() {
   return (
     <AdminLayout
       title="Work Locations"
-      subtitle="Geofenced locations for GPS-verified clock in/out"
+      subtitle="Geofenced locations for GPS-verified clock in/out and route starting point"
       actions={
         <Button onClick={() => setShowAddDialog(true)} data-testid="button-add-location">
           <Plus className="w-4 h-4 mr-2" />
@@ -107,7 +125,7 @@ export default function AdminLocationsPage() {
         <EmptyState
           icon={MapPin}
           title="No work locations"
-          description="Add work locations to enable GPS-verified clock in/out for drivers."
+          description="Add work locations to enable GPS-verified clock in/out for drivers and set a route starting point."
           action={
             <Button onClick={() => setShowAddDialog(true)} data-testid="button-first-location">
               <Plus className="w-4 h-4 mr-2" />
@@ -118,14 +136,22 @@ export default function AdminLocationsPage() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {locations.map((location) => (
-            <Card key={location.id} className="p-5" data-testid={`location-card-${location.id}`}>
+            <Card key={location.id} className={`p-5 ${location.isStartingPoint ? 'ring-2 ring-primary' : ''}`} data-testid={`location-card-${location.id}`}>
               <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
                     <MapPin className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <p className="font-medium text-foreground">{location.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-foreground">{location.name}</p>
+                      {location.isStartingPoint && (
+                        <Badge variant="default" className="text-xs gap-1">
+                          <Navigation className="w-3 h-3" />
+                          Starting Point
+                        </Badge>
+                      )}
+                    </div>
                     <p className="text-sm text-muted-foreground">{location.address}</p>
                   </div>
                 </div>
@@ -139,7 +165,7 @@ export default function AdminLocationsPage() {
                 </Button>
               </div>
 
-              <div className="bg-muted/50 rounded-lg p-3 space-y-1">
+              <div className="bg-muted/50 rounded-lg p-3 space-y-1 mb-3">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Coordinates</span>
                   <span className="font-mono text-foreground">
@@ -151,6 +177,19 @@ export default function AdminLocationsPage() {
                   <span className="font-medium text-foreground">{location.radiusMeters}m</span>
                 </div>
               </div>
+
+              {!location.isStartingPoint && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full gap-2"
+                  onClick={() => setStartingPointMutation.mutate(location.id)}
+                  disabled={setStartingPointMutation.isPending}
+                >
+                  <Navigation className="w-3.5 h-3.5" />
+                  Set as Route Starting Point
+                </Button>
+              )}
             </Card>
           ))}
         </div>
@@ -161,7 +200,7 @@ export default function AdminLocationsPage() {
           <DialogHeader>
             <DialogTitle>Add Work Location</DialogTitle>
             <DialogDescription>
-              Add a geofenced location where drivers can clock in and out.
+              Add a geofenced location where drivers can clock in and out. You can also designate it as the route starting point.
             </DialogDescription>
           </DialogHeader>
 
